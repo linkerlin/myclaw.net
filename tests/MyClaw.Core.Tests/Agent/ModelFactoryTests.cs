@@ -109,7 +109,7 @@ public class ModelFactoryTests
     }
 
     [Fact]
-    public void Create_DefaultAnthropic_WhenTypeIsNull_ShouldUseAnthropic()
+    public void Create_DefaultOpenAI_WhenTypeIsNull_ShouldUseOpenAI()
     {
         var config = new ProviderConfig
         {
@@ -120,6 +120,6 @@ public class ModelFactoryTests
         var model = ModelFactory.Create(config);
 
         Assert.NotNull(model);
-        Assert.IsType<AnthropicModel>(model);
+        Assert.IsType<OpenAIModel>(model);
     }
 }
