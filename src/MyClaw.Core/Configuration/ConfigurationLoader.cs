@@ -88,6 +88,9 @@ public static class ConfigurationLoader
     /// </summary>
     private static void ApplyEnvironmentVariables(MyClawConfiguration cfg)
     {
+        // 默认使用 OpenAI 格式
+        cfg.Provider.Type = "openai";
+        
         // ==================== OPENAI (最高优先级) ====================
         if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("OPENAI_API_KEY")))
         {
