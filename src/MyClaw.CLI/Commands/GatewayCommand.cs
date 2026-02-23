@@ -1,5 +1,7 @@
 using System;
 using System.CommandLine;
+using System.Diagnostics;
+using System.Net.NetworkInformation;
 using System.Threading;
 using System.Threading.Tasks;
 using MyClaw.Core.Configuration;
@@ -14,6 +16,69 @@ namespace MyClaw.CLI.Commands;
 /// </summary>
 public class GatewayCommand : Command
 {
+    private static void KillProcessOnPort(int port)
+    {
+        var properties = IPGlobalProperties.GetIPGlobalProperties();
+        var listeners = properties.GetActiveTcpListeners();
+        
+        foreach (var listener in listeners)
+        {
+            if (listener.Port == port)
+            {
+                AnsiConsole.MarkupLine($"[yellow]端口 {port} 已被占用，正在终止占用进程...[/]");
+                
+                try
+                {
+                    var psi = new ProcessStartInfo
+                    {
+                        FileName = "netstat",
+                        Arguments = $"-ano | findstr :{port}",
+                        RedirectStandardOutput = true,
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    };
+                    
+                    using var process = Process.Start(psi);
+                    if (process == null) return;
+                    
+                    var output = process.StandardOutput.ReadToEnd();
+                    process.WaitForExit();
+                    
+                    var lines = output.Split('\n');
+                    foreach (var line in lines)
+                    {
+                        var parts = line.Trim().Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                        if (parts.Length >= 5 && parts[0] == "TCP")
+                        {
+                            if (int.TryParse(parts[4], out var pid) && pid > 0)
+                            {
+                                try
+                                {
+                                    var killProcess = Process.GetProcessById(pid);
+                                    var processName = killProcess.ProcessName;
+                                    AnsiConsole.MarkupLine($"[yellow]终止进程: {processName} (PID: {pid})[/]");
+                                    killProcess.Kill();
+                                    killProcess.WaitForExit(3000);
+                                    AnsiConsole.MarkupLine($"[green]✓ 进程已终止[/]");
+                                }
+                                catch (Exception ex)
+                                {
+                                    AnsiConsole.MarkupLine($"[red]无法终止进程 PID {pid}: {ex.Message}[/]");
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    AnsiConsole.MarkupLine($"[red]检查端口失败: {ex.Message}[/]");
+                }
+                break;
+            }
+        }
+    }
+    
     public GatewayCommand() : base("gateway", "启动完整网关（渠道 + 定时任务 + 心跳 + MCP）")
     {
         // MCP 端口参数，默认 2334
@@ -44,10 +109,21 @@ public class GatewayCommand : Command
             };
 
             // 启动 MCP 服务
+            KillProcessOnPort(mcpPort);
             AnsiConsole.MarkupLine($"[blue]正在端口 {mcpPort} 启动 MCP 服务...[/]");
             var mcpServer = new McpServer(mcpPort);
             await mcpServer.StartAsync();
             AnsiConsole.MarkupLine($"[green]✓ MCP 服务已启动 http://localhost:{mcpPort}[/]");
+
+            // 检查并清理网关端口
+            KillProcessOnPort(cfg.Gateway.Port);
+            
+            // 检查并清理 WebUI 端口
+            var webuiPort = cfg.Channels?.WebUI?.Port ?? 8080;
+            if (cfg.Channels?.WebUI?.Enabled == true)
+            {
+                KillProcessOnPort(webuiPort);
+            }
 
             // 启动网关
             AnsiConsole.MarkupLine($"[blue]正在 {cfg.Gateway.Host}:{cfg.Gateway.Port} 启动网关...[/]");

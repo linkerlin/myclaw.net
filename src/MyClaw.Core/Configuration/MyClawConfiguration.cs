@@ -57,7 +57,7 @@ public class MyClawConfiguration
         {
             Agent = new AgentConfig
             {
-                Workspace = Path.Combine(home, ".myclaw", "workspace"),
+                Workspace = Path.Combine(home, ".myclaw.net"),
                 Model = DefaultModel,
                 MaxTokens = DefaultMaxTokens,
                 Temperature = DefaultTemperature,

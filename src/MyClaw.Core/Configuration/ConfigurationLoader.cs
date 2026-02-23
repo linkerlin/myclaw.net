@@ -12,7 +12,7 @@ public static class ConfigurationLoader
 {
     public static string ConfigDir => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), 
-        ".myclaw");
+        ".config", ".myclaw.net");
     
     public static string ConfigPath => Path.Combine(ConfigDir, "config.json");
 

@@ -8,35 +8,10 @@ using Spectre.Console;
 namespace MyClaw.CLI.Commands;
 
 /// <summary>
-/// Onboard 命令 - 初始化配置和工作区
+/// Onboard 命令 - 初始化配置和工作区，从 templates 复制模板文件
 /// </summary>
 public class OnboardCommand : Command
 {
-    private const string DefaultAgentsMd = @"# myclaw Agent
-
-你是 myclaw，一个个人 AI 助手。
-
-你可以使用文件操作、网络搜索和命令执行等工具。
-使用它们来帮助用户完成任务。
-
-## 指南
-- 简洁且有帮助
-- 需要时主动使用工具
-- 通过写入记忆来记住用户告诉你的信息
-- 检查记忆上下文以获取之前存储的信息
-";
-
-    private const string DefaultSoulMd = @"# 灵魂
-
-你是一个能干的个人助手，可以帮助处理日常任务、
-研究、编程和一般问题。
-
-你的性格：
-- 直接且高效
-- 需要时技术性强，可能时简单明了
-- 主动使用工具来获取真实答案
-";
-
     public OnboardCommand() : base("onboard", "初始化配置和工作区")
     {
         this.SetHandler(() =>
@@ -62,9 +37,14 @@ public class OnboardCommand : Command
             var cfg = ConfigurationLoader.Load();
             var ws = cfg.Agent.Workspace;
 
-            // 创建目录
-            Directory.CreateDirectory(Path.Combine(ws, "memory"));
+            // 创建工作区目录
+            Directory.CreateDirectory(ws);
             AnsiConsole.MarkupLine($"[green]已创建工作区: {ws}[/]");
+
+            // 创建子目录
+            var memoryDir = Path.Combine(ws, "memory");
+            Directory.CreateDirectory(memoryDir);
+            AnsiConsole.MarkupLine($"[green]已创建记忆目录: {memoryDir}[/]");
 
             var skillsDir = string.IsNullOrEmpty(cfg.Skills.Dir) 
                 ? Path.Combine(ws, "skills") 
@@ -72,11 +52,8 @@ public class OnboardCommand : Command
             Directory.CreateDirectory(skillsDir);
             AnsiConsole.MarkupLine($"[green]已创建技能目录: {skillsDir}[/]");
 
-            // 创建默认文件
-            WriteIfNotExists(Path.Combine(ws, "AGENTS.md"), DefaultAgentsMd);
-            WriteIfNotExists(Path.Combine(ws, "SOUL.md"), DefaultSoulMd);
-            WriteIfNotExists(Path.Combine(ws, "memory", "MEMORY.md"), "");
-            WriteIfNotExists(Path.Combine(ws, "HEARTBEAT.md"), "");
+            // 从项目 templates 目录复制模板文件
+            SyncTemplates(ws);
 
             AnsiConsole.MarkupLine("");
             AnsiConsole.MarkupLine("[blue]下一步:[/]");
@@ -87,12 +64,109 @@ public class OnboardCommand : Command
         });
     }
 
-    private static void WriteIfNotExists(string path, string content)
+    /// <summary>
+    /// 从项目 templates 目录同步模板文件到工作区
+    /// </summary>
+    private static void SyncTemplates(string workspacePath)
     {
-        if (!File.Exists(path))
+        // 查找 templates 目录
+        var templatesDir = FindTemplatesDirectory();
+        
+        if (string.IsNullOrEmpty(templatesDir))
         {
-            File.WriteAllText(path, content);
-                AnsiConsole.MarkupLine($"[green]已创建: {path}[/]");
+            AnsiConsole.MarkupLine("[yellow]警告: 未找到 templates 目录，跳过模板同步[/]");
+            return;
         }
+
+        AnsiConsole.MarkupLine($"[blue]从 {templatesDir} 同步模板...[/]");
+
+        var templateFiles = new[] { "AGENTS.md", "SOUL.md", "IDENTITY.md", "USER.md", "TOOLS.md", "HEARTBEAT.md", "BOOTSTRAP.md", "SUBAGENT.md", "MEMORY.md" };
+        var copiedCount = 0;
+        var skippedCount = 0;
+
+        foreach (var fileName in templateFiles)
+        {
+            var sourcePath = Path.Combine(templatesDir, fileName);
+            
+            if (!File.Exists(sourcePath))
+            {
+                continue; // 模板文件不存在则跳过
+            }
+
+            var targetPath = Path.Combine(workspacePath, fileName);
+            
+            if (File.Exists(targetPath))
+            {
+                AnsiConsole.MarkupLine($"[dim]已存在，跳过: {fileName}[/]");
+                skippedCount++;
+            }
+            else
+            {
+                try
+                {
+                    File.Copy(sourcePath, targetPath);
+                    AnsiConsole.MarkupLine($"[green]已复制: {fileName}[/]");
+                    copiedCount++;
+                }
+                catch (Exception ex)
+                {
+                    AnsiConsole.MarkupLine($"[red]复制失败 {fileName}: {ex.Message}[/]");
+                }
+            }
+        }
+
+        AnsiConsole.MarkupLine($"[blue]模板同步完成: {copiedCount} 个复制, {skippedCount} 个跳过[/]");
+    }
+
+    /// <summary>
+    /// 查找项目中的 templates 目录
+    /// </summary>
+    private static string? FindTemplatesDirectory()
+    {
+        // 1. 首先检查环境变量
+        var envTemplates = Environment.GetEnvironmentVariable("MYCLAW_TEMPLATES_DIR");
+        if (!string.IsNullOrEmpty(envTemplates) && Directory.Exists(envTemplates))
+        {
+            return envTemplates;
+        }
+
+        // 2. 从当前工作目录向上查找
+        var currentDir = Directory.GetCurrentDirectory();
+        var searchDir = currentDir;
+        
+        for (int i = 0; i < 5; i++) // 向上查找最多 5 层
+        {
+            var templatesPath = Path.Combine(searchDir, "templates");
+            if (Directory.Exists(templatesPath))
+            {
+                // 验证是否包含核心模板文件
+                if (File.Exists(Path.Combine(templatesPath, "AGENTS.md")) ||
+                    File.Exists(Path.Combine(templatesPath, "SOUL.md")))
+                {
+                    return templatesPath;
+                }
+            }
+
+            var parentDir = Directory.GetParent(searchDir);
+            if (parentDir == null) break;
+            searchDir = parentDir.FullName;
+        }
+
+        // 3. 检查可执行文件所在目录
+        var exeDir = AppContext.BaseDirectory;
+        var exeTemplatesPath = Path.Combine(exeDir, "templates");
+        if (Directory.Exists(exeTemplatesPath))
+        {
+            return exeTemplatesPath;
+        }
+
+        // 4. 检查用户配置目录
+        var userTemplatesPath = Path.Combine(ConfigurationLoader.ConfigDir, "templates");
+        if (Directory.Exists(userTemplatesPath))
+        {
+            return userTemplatesPath;
+        }
+
+        return null;
     }
 }

@@ -1,6 +1,12 @@
+---
+summary: "Agent 系统提示词。定义能力、性格和指导原则。"
+read_when:
+  - 每次会话
+---
+
 # Agent 系统提示词
 
-你是 MyClaw，一个由 AgentScope.NET 驱动的智能 AI 助手。
+你是 {{AGENT_NAME}}，一个由 {{FRAMEWORK}} 驱动的智能 AI 助手。
 
 ## 能力
 

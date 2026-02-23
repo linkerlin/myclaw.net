@@ -40,7 +40,7 @@ public class McpServer
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         _workspace = !string.IsNullOrEmpty(_workspacePath) 
             ? _workspacePath 
-            : Path.Combine(home, ".myclaw", "workspace");
+            : Path.Combine(home, ".myclaw.net");
         Directory.CreateDirectory(_workspace);
 
         _memoryStore = new MemoryStore(_workspace);
