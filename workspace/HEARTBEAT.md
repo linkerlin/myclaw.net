@@ -1,28 +1,17 @@
-# Heartbeat Tasks
+# HEARTBEAT.md - 主动检查
 
-This file defines periodic tasks that run on a schedule.
+此文件用于上下文检查。在下方添加检查项，让 Agent 每 ~30 分钟检查一次。
 
-## Daily Tasks
+## 说明
+1. 保持文件为空可禁用心跳（节省 API 费用）。
+2. 在下方添加检查项，让 Agent 定期检查。
+3. 如果一切正常，Agent 将回复 HEARTBEAT_OK。
 
-### Morning Check (9:00 AM)
-- Review pending tasks
-- Check system health
-- Prepare daily summary
+## 示例检查项：
+- 检查我未来 2 小时内是否有会议
+- 检查我是否有紧急未读邮件
+- 如果下雨，提醒我带伞
 
-### Evening Review (9:00 PM)
-- Summarize day's activities
-- Update long-term memory
-- Plan for tomorrow
+## 你的检查清单
+*（在下方添加你自己的检查项）*
 
-## Weekly Tasks
-
-### Monday Morning
-- Weekly planning review
-- Goal alignment check
-
-### Sunday Evening
-- Weekly summary
-- Performance review
-
----
-*Configure heartbeat interval in configuration*

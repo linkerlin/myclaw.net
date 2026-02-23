@@ -1,29 +1,29 @@
 ---
-summary: "Tool configuration. Records local-specific tool parameters and environment settings."
+summary: "工具配置。记录本地特定的工具参数和环境设置。"
 read_when:
-  - Bootstrapping a workspace manually
+  - 手动初始化工作空间
 ---
 
-# TOOLS.md - Environment Configuration
+# TOOLS.md - 环境配置
 
-*Store local tool configurations, paths, and environment-specific settings.*
+*存储本地工具配置、路径和环境特定设置。*
 
-## Environment Variables
-- (None recorded yet)
+## 环境变量
+- (尚未记录)
 
-## Local Paths
-- **Workspace**: (Current working directory)
-- **Temp**: (System temp directory)
+## 本地路径
+- **工作空间 (Workspace)**: (当前工作目录)
+- **临时目录 (Temp)**: (系统临时目录)
 
-## Tool Versions
-- (Detect and record as needed)
+## 工具版本
+- (根据需要检测并记录)
 
-## Device Nickname
-- (Optional friendly name for this machine)
+## 设备昵称
+- (此机器的可选友好名称)
 
-## Custom Aliases
-- (User-defined command shortcuts)
+## 自定义别名
+- (用户定义的命令快捷方式)
 
 ---
 
-_Update this file when you discover environment-specific configurations._
+_发现环境特定配置时更新此文件。_

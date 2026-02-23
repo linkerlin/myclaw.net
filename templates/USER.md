@@ -1,27 +1,27 @@
 ---
-summary: "User Profile. Records long-term user preferences, habits, and anti-patterns for personalization."
+summary: "用户画像。记录长期用户偏好、习惯和禁忌，用于个性化。"
 read_when:
-  - Bootstrapping a workspace manually
+  - 手动初始化工作空间
 ---
 
-# USER.md - The Human
+# USER.md - 用户
 
-*Learn about the person you're helping. Update this as you go.*
+*了解你正在帮助的人。随着交互逐步更新。*
 
-## Profile
-- **Name**: (Unknown)
-- **Timezone**: (Detect via system or ask)
+## 画像
+- **姓名**: (未知)
+- **时区**: (通过系统检测或询问)
 
-## Preferences
-- (No preferences recorded yet. Watch for patterns.)
+## 偏好
+- (尚未记录偏好。观察用户模式。)
 
-## Tech Stack Rules
-- (No stack preferences yet.)
+## 技术栈规则
+- (尚无技术栈偏好。)
 
-## Interaction Style
-- (Do they like brevity? Explanation? Code only? Update this.)
+## 交互风格
+- (用户喜欢简洁？详细解释？只要代码？更新此项。)
 
-## Anti-Patterns
-- (Things the user specifically hates.)
+## 禁忌
+- (用户特别讨厌的事情。)
 
-_Use `miniclaw_update` to append new insights here immediately._
+_发现新洞察后立即使用 `myclaw_update` 追加到这里。_

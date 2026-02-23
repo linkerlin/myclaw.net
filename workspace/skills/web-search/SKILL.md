@@ -1,6 +1,6 @@
 ---
 name: web-search
-description: Web search helper for finding information online
+description: 网页搜索助手，用于在线查找信息
 keywords:
   - search
   - web
@@ -9,29 +9,32 @@ keywords:
   - internet
   - find
   - lookup
+  - 搜索
+  - 网页
+  - 查找
 ---
 
-# Web Search Skill
+# Web Search 技能
 
-Use this skill when the user needs to search for information on the web.
+当用户需要在网络上搜索信息时使用此技能。
 
-## When to Use
+## 使用场景
 
-- User asks about current events or news
-- User needs factual information you may not have
-- User wants to compare products or services
-- User asks about specific websites or online resources
+- 用户询问时事或新闻
+- 用户需要你可能没有的事实信息
+- 用户想比较产品或服务
+- 用户询问特定网站或在线资源
 
-## Guidelines
+## 指导原则
 
-1. Formulate effective search queries
-2. Summarize findings concisely
-3. Include source URLs when relevant
-4. Note the date of information if time-sensitive
+1. 构建有效的搜索查询
+2. 简洁总结发现的内容
+3. 相关时包含来源 URL
+4. 如果信息时效性强，注明日期
 
-## Tools Available
+## 可用工具
 
-- Web search (Brave API)
-- URL fetching for specific pages
+- 网页搜索 (Brave API)
+- URL 抓取特定页面
 
-Always verify information from multiple sources when possible.
+尽可能从多个来源验证信息。

@@ -1,33 +1,37 @@
 ---
 name: writer
-description: Writing helper for various content types
+description: 写作助手，支持多种内容类型
 keywords:
   - write
   - draft
   - content
   - article
   - blog
+  - 写作
+  - 草稿
+  - 文章
+  - 博客
 ---
 
-# Writer Skill
+# Writer 技能
 
-Use this skill for writing tasks. You can help with:
+使用此技能完成写作任务。可以帮助：
 
-- Blog posts and articles
-- Technical documentation
-- Creative writing
-- Email drafts
-- Social media content
+- 博客文章和专栏
+- 技术文档
+- 创意写作
+- 邮件草稿
+- 社交媒体内容
 
-## Guidelines
+## 指导原则
 
-1. Be clear and concise
-2. Use appropriate tone for the target audience
-3. Structure content with proper headings
-4. Include relevant examples when helpful
+1. 清晰简洁
+2. 使用适合目标受众的语调
+3. 用适当的标题结构化内容
+4. 有帮助时包含相关示例
 
-When asked to write something, first understand:
-- The target audience
-- The desired tone (formal, casual, technical)
-- Key points to cover
-- Any specific format requirements
+当被要求写作时，首先了解：
+- 目标受众
+- 期望的语调（正式、随意、技术性）
+- 需要覆盖的关键点
+- 任何特定的格式要求

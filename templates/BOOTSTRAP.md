@@ -1,39 +1,39 @@
 ---
-summary: "First-run bootstrap guide. Initializes the workspace for new agents."
+summary: "首次运行引导。为新 Agent 初始化工作空间。"
 read_when:
-  - First run only
+  - 仅首次运行
 ---
 
-# 👶 BOOTSTRAP.md - First Run Guide
+# 👶 BOOTSTRAP.md - 首次运行指南
 
-Welcome! This is your first time running MyClaw. Let's set things up.
+欢迎！这是你首次运行 MyClaw。让我们进行设置。
 
-## Step 1: Awakening Interview
+## 步骤 1：唤醒访谈
 
-Ask the user:
-1. What should I call you?
-2. What's your primary use case for me?
-3. Any preferences I should know about?
+询问用户：
+1. 我该如何称呼你？
+2. 你主要想用我来做什么？
+3. 有什么偏好我需要知道的吗？
 
-## Step 2: Embodiment
+## 步骤 2：具身化
 
-Based on the interview, create/update:
-- `USER.md` - Record user preferences
-- `IDENTITY.md` - Confirm your identity
-- `SOUL.md` - Establish personality baseline
+根据访谈内容，创建/更新：
+- `USER.md` - 记录用户偏好
+- `IDENTITY.md` - 确认你的身份
+- `SOUL.md` - 建立性格基线
 
-## Step 3: Cleanup
+## 步骤 3：清理
 
-After successful initialization:
-1. Delete this `BOOTSTRAP.md` file
-2. Start normal operation
+成功初始化后：
+1. 删除此 `BOOTSTRAP.md` 文件
+2. 开始正常运行
 
-## Quick Start Commands
+## 快速启动命令
 
-- `myclaw agent` - Start a conversation
-- `myclaw status` - Check system status
-- `myclaw skills list` - View available skills
+- `myclaw agent` - 开始对话
+- `myclaw status` - 检查系统状态
+- `myclaw skills list` - 查看可用技能
 
 ---
 
-_This file will be deleted after first successful setup._
+_首次成功设置后此文件将被删除。_

@@ -1,6 +1,6 @@
 ---
 name: calculator
-description: Mathematical calculations and conversions
+description: 数学计算和单位转换
 keywords:
   - calculate
   - math
@@ -9,32 +9,35 @@ keywords:
   - conversion
   - number
   - formula
+  - 计算
+  - 数学
+  - 转换
 ---
 
-# Calculator Skill
+# Calculator 技能
 
-Use this skill for mathematical calculations and unit conversions.
+使用此技能进行数学计算和单位转换。
 
-## Capabilities
+## 能力
 
-- Basic arithmetic (+, -, *, /)
-- Complex formulas
-- Unit conversions (length, weight, temperature, currency)
-- Percentage calculations
-- Statistical functions
+- 基础运算 (+, -, *, /)
+- 复杂公式
+- 单位转换（长度、重量、温度、货币）
+- 百分比计算
+- 统计函数
 
-## Guidelines
+## 指导原则
 
-1. Show your work step by step for complex calculations
-2. Verify units match before calculating
-3. Round appropriately based on context
-4. Provide both precise and approximate answers when helpful
+1. 对于复杂计算，逐步展示计算过程
+2. 计算前验证单位是否匹配
+3. 根据上下文适当四舍五入
+4. 在有帮助时同时提供精确值和近似值
 
-## Common Conversions
+## 常用转换
 
-- Temperature: Celsius ↔ Fahrenheit ↔ Kelvin
-- Length: meters ↔ feet ↔ inches
-- Weight: kg ↔ lbs ↔ oz
-- Currency: Use current exchange rates
+- 温度：摄氏 ↔ 华氏 ↔ 开尔文
+- 长度：米 ↔ 英尺 ↔ 英寸
+- 重量：千克 ↔ 磅 ↔ 盎司
+- 货币：使用当前汇率
 
-Always double-check critical calculations.
+始终仔细检查关键计算。

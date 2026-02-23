@@ -70,7 +70,7 @@ public class HeartbeatService
             var content = await File.ReadAllTextAsync(hbPath);
             content = content.Trim();
 
-            if (string.IsNullOrEmpty(content))
+            if (string.IsNullOrEmpty(content) || content.StartsWith("# HEARTBEAT.md") && !content.Contains("- "))
             {
                 return;
             }
@@ -83,7 +83,13 @@ public class HeartbeatService
                 return;
             }
 
-            var result = await OnHeartbeat(content);
+            var prompt = $@"Heartbeat prompt: Check the following items for updates or actions needed.
+
+{content}
+
+If nothing needs attention, reply exactly: HEARTBEAT_OK";
+
+            var result = await OnHeartbeat(prompt);
 
             if (result.Contains("HEARTBEAT_OK"))
             {
