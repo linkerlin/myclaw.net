@@ -42,7 +42,7 @@ public class AgentConfigurationTests
     {
         var config = new ProviderConfig();
 
-        Assert.Equal("anthropic", config.Type);
+        Assert.Equal("openai", config.Type);
         Assert.Equal("", config.ApiKey);
         Assert.Equal("", config.BaseUrl);
         Assert.Null(config.Model);

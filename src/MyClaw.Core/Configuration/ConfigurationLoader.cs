@@ -88,9 +88,6 @@ public static class ConfigurationLoader
     /// </summary>
     private static void ApplyEnvironmentVariables(MyClawConfiguration cfg)
     {
-        // 默认使用 OpenAI 格式
-        cfg.Provider.Type = "openai";
-        
         // ==================== OPENAI (最高优先级) ====================
         if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("OPENAI_API_KEY")))
         {
@@ -116,26 +113,24 @@ public static class ConfigurationLoader
                 cfg.Agent.Model = "deepseek-chat";
         }
         // ==================== Anthropic (第三优先级) ====================
-        else
+        else if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY")))
         {
-            if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY")))
-            {
-                cfg.Provider.ApiKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY")!;
-                cfg.Provider.Type = "anthropic";
-            }
-            else if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ANTHROPIC_AUTH_TOKEN")))
-            {
-                cfg.Provider.ApiKey = Environment.GetEnvironmentVariable("ANTHROPIC_AUTH_TOKEN")!;
-                cfg.Provider.Type = "anthropic";
-            }
-            else if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("MYCLAW_API_KEY")))
-            {
-                cfg.Provider.ApiKey = Environment.GetEnvironmentVariable("MYCLAW_API_KEY")!;
-            }
-
+            cfg.Provider.ApiKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY")!;
+            cfg.Provider.Type = "anthropic";
+            
             if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ANTHROPIC_BASE_URL")))
                 cfg.Provider.BaseUrl = Environment.GetEnvironmentVariable("ANTHROPIC_BASE_URL")!;
-            else if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("MYCLAW_BASE_URL")))
+        }
+        else if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ANTHROPIC_AUTH_TOKEN")))
+        {
+            cfg.Provider.ApiKey = Environment.GetEnvironmentVariable("ANTHROPIC_AUTH_TOKEN")!;
+            cfg.Provider.Type = "anthropic";
+        }
+        else if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("MYCLAW_API_KEY")))
+        {
+            cfg.Provider.ApiKey = Environment.GetEnvironmentVariable("MYCLAW_API_KEY")!;
+            
+            if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("MYCLAW_BASE_URL")))
                 cfg.Provider.BaseUrl = Environment.GetEnvironmentVariable("MYCLAW_BASE_URL")!;
         }
 
