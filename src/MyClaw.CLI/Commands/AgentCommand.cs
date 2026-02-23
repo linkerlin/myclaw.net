@@ -51,6 +51,7 @@ public class AgentCommand : Command
             var skillManager = new SkillManager(cfg.Agent.Workspace);
             skillManager.LoadSkills();
 
+            cfg.Provider.Model = cfg.Provider.Model ?? cfg.Agent.Model;
             var modelInstance = ModelFactory.Create(cfg.Provider);
             var agent = new MyClawAgent(cfg, modelInstance, memoryStore, skillManager);
 

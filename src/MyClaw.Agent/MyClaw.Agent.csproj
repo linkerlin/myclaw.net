@@ -4,7 +4,7 @@
     <ProjectReference Include="..\MyClaw.Core\MyClaw.Core.csproj" />
     <ProjectReference Include="..\MyClaw.Memory\MyClaw.Memory.csproj" />
     <ProjectReference Include="..\MyClaw.Skills\MyClaw.Skills.csproj" />
-    <ProjectReference Include="..\..\..\agentscope.net\src\AgentScope.Core\AgentScope.Core.csproj" />
+    <PackageReference Include="AgentScope.Core" Version="1.1.0" />
   </ItemGroup>
 
   <PropertyGroup>

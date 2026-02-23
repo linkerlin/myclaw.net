@@ -67,6 +67,7 @@ public class GatewayService
             }
 
             // 初始化 Agent
+            _config.Provider.Model = _config.Provider.Model ?? _config.Agent.Model;
             var model = ModelFactory.Create(_config.Provider);
             _agent = new MyClawAgent(_config, model, _memoryStore, _skillManager);
             Console.WriteLine("[gateway] Agent 已初始化");
