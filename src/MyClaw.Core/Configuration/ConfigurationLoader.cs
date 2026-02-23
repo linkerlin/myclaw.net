@@ -133,6 +133,17 @@ public static class ConfigurationLoader
             if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("MYCLAW_BASE_URL")))
                 cfg.Provider.BaseUrl = Environment.GetEnvironmentVariable("MYCLAW_BASE_URL")!;
         }
+        
+        // ==================== OpenAI 兼容模式检测 ====================
+        // 如果 BaseUrl 指向 OpenAI 兼容端点，强制使用 openai 类型
+        var baseUrl = cfg.Provider.BaseUrl?.ToLowerInvariant() ?? "";
+        if (baseUrl.Contains("compatible-mode") || 
+            baseUrl.Contains("dashscope") ||
+            baseUrl.Contains("openai.azure") ||
+            (!string.IsNullOrEmpty(baseUrl) && !baseUrl.Contains("anthropic")))
+        {
+            cfg.Provider.Type = "openai";
+        }
 
         // Channel settings
         if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("MYCLAW_TELEGRAM_TOKEN")))
