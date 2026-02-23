@@ -52,6 +52,7 @@ public class FallbackModelProvider
             try
             {
                 Console.WriteLine($"[Fallback] 尝试使用 {candidate.Name}...");
+                Console.WriteLine($"[Fallback] Config: Type={candidate.Config.Type}, Model={candidate.Config.Model}, BaseUrl={candidate.Config.BaseUrl}");
                 var model = ModelFactory.Create(candidate.Config);
                 
                 // 如果提供了测试函数，先测试连接
@@ -284,7 +285,10 @@ public class FallbackAgent
                     .Build();
 
                 var response = await _agent!.Call(msg).FirstAsync();
-                return response.GetTextContent() ?? "无响应";
+                var textContent = response.GetTextContent();
+                Console.WriteLine($"[Debug] Response type: {response.GetType().Name}");
+                Console.WriteLine($"[Debug] Text content: {textContent ?? "(null)"}");
+                return textContent ?? "无响应";
             }
             catch (Exception ex) when (IsRecoverableError(ex))
             {

@@ -13,9 +13,14 @@ public static class ModelFactory
             throw new InvalidOperationException("API key is required");
         }
 
+        var provider = config.Type?.ToLowerInvariant() ?? "openai";
+        var modelName = config.Model ?? AgentScope.Core.ModelFactoryExtensions.GetDefaultModel(provider);
+        
+        Console.WriteLine($"[ModelFactory] Creating model: provider={provider}, model={modelName}");
+        
         return AgentScope.Core.ModelFactory.Create(
-            provider: config.Type?.ToLowerInvariant() ?? "anthropic",
-            modelName: config.Model ?? AgentScope.Core.ModelFactoryExtensions.GetDefaultModel(config.Type ?? "anthropic"),
+            provider: provider,
+            modelName: modelName,
             apiKey: config.ApiKey,
             baseUrl: config.BaseUrl
         );
