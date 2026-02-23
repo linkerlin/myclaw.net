@@ -52,6 +52,17 @@ public class AgentCommand : Command
             skillManager.LoadSkills();
 
             cfg.Provider.Model = cfg.Provider.Model ?? cfg.Agent.Model;
+            
+            // 显示当前使用的 LLM 配置
+            AnsiConsole.MarkupLine($"[dim]Provider:[/] [cyan]{cfg.Provider.Type}[/]");
+            AnsiConsole.MarkupLine($"[dim]Model:[/] [cyan]{cfg.Provider.Model}[/]");
+            if (!string.IsNullOrEmpty(cfg.Provider.BaseUrl))
+            {
+                AnsiConsole.MarkupLine($"[dim]BaseUrl:[/] [cyan]{cfg.Provider.BaseUrl}[/]");
+            }
+            AnsiConsole.MarkupLine($"[dim]API Key:[/] [cyan]***{cfg.Provider.ApiKey[^4..]}[/]");
+            AnsiConsole.WriteLine();
+            
             var modelInstance = ModelFactory.Create(cfg.Provider);
             var agent = new MyClawAgent(cfg, modelInstance, memoryStore, skillManager);
 

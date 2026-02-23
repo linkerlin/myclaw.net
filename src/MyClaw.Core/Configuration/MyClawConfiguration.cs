@@ -11,7 +11,7 @@ namespace MyClaw.Core.Configuration;
 /// </summary>
 public class MyClawConfiguration
 {
-    public const string DefaultModel = "claude-sonnet-4-5-20250929";
+    public const string DefaultModel = "claude-3-5-sonnet-20241022";
     public const int DefaultMaxTokens = 8192;
     public const double DefaultTemperature = 0.7;
     public const int DefaultMaxToolIterations = 20;
