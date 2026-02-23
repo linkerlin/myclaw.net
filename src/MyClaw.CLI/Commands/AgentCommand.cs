@@ -22,7 +22,7 @@ public class AgentCommand : Command
         var modelOption = new Option<string>(
             aliases: new[] { "--model", "-M" },
             description: "指定使用的模型",
-            getDefaultValue: () => "anthropic");
+            getDefaultValue: () => "openai");
             
         var replOption = new Option<bool>(
             aliases: new[] { "--repl", "-r" },
@@ -43,7 +43,7 @@ public class AgentCommand : Command
             
             if (string.IsNullOrEmpty(cfg.Provider.ApiKey))
             {
-                AnsiConsole.MarkupLine("[red]API 密钥未设置。请运行 'myclaw onboard' 或设置 MYCLAW_API_KEY / ANTHROPIC_API_KEY[/]");
+                AnsiConsole.MarkupLine("[red]API 密钥未设置。请运行 'myclaw onboard' 或设置 MYCLAW_API_KEY / OPENAI_API_KEY / ANTHROPIC_API_KEY[/]");
                 return;
             }
 
@@ -53,31 +53,39 @@ public class AgentCommand : Command
 
             cfg.Provider.Model = cfg.Provider.Model ?? cfg.Agent.Model;
             
-            // 显示当前使用的 LLM 配置
-            AnsiConsole.MarkupLine($"[dim]Provider:[/] [cyan]{cfg.Provider.Type}[/]");
-            AnsiConsole.MarkupLine($"[dim]Model:[/] [cyan]{cfg.Provider.Model}[/]");
-            if (!string.IsNullOrEmpty(cfg.Provider.BaseUrl))
+            // 使用新的 FallbackAgent
+            var fallbackAgent = new FallbackAgent(cfg, memoryStore, skillManager);
+            
+            // 显示可用 Provider 列表
+            AnsiConsole.MarkupLine("[dim]可用 Provider:[/]");
+            foreach (var provider in fallbackAgent.AvailableProviders)
             {
-                AnsiConsole.MarkupLine($"[dim]BaseUrl:[/] [cyan]{cfg.Provider.BaseUrl}[/]");
+                AnsiConsole.MarkupLine($"  - [cyan]{provider}[/]");
             }
-            AnsiConsole.MarkupLine($"[dim]API Key:[/] [cyan]***{cfg.Provider.ApiKey[^4..]}[/]");
             AnsiConsole.WriteLine();
             
-            var modelInstance = ModelFactory.Create(cfg.Provider);
-            var agent = new MyClawAgent(cfg, modelInstance, memoryStore, skillManager);
+            // 初始化（自动选择第一个可用的）
+            await AnsiConsole.Status()
+                .StartAsync("正在初始化模型...", async ctx =>
+                {
+                    await fallbackAgent.InitializeAsync();
+                });
+            
+            AnsiConsole.MarkupLine($"[dim]当前 Provider:[/] [green]{fallbackAgent.CurrentProvider}[/]");
+            AnsiConsole.WriteLine();
 
             if (!string.IsNullOrEmpty(message) && !repl)
             {
-                await RunSingleMessageAsync(agent, message);
+                await RunSingleMessageAsync(fallbackAgent, message);
             }
             else
             {
-                await RunReplAsync(agent);
+                await RunReplAsync(fallbackAgent);
             }
         }, messageOption, modelOption, replOption);
     }
 
-    private async Task RunSingleMessageAsync(MyClawAgent agent, string message)
+    private async Task RunSingleMessageAsync(FallbackAgent agent, string message)
     {
         string response = "";
         await AnsiConsole.Status()
@@ -89,13 +97,14 @@ public class AgentCommand : Command
         AnsiConsole.MarkupLine($"[green]助手:[/] {response}");
     }
 
-    private async Task RunReplAsync(MyClawAgent agent)
+    private async Task RunReplAsync(FallbackAgent agent)
     {
         AnsiConsole.MarkupLine("[blue]myclaw agent (输入 'exit' 或 '/quit' 退出)[/]");
         
         while (true)
         {
-            var input = AnsiConsole.Ask<string?>("> ");
+            Console.Write("> ");
+            var input = Console.ReadLine();
             
             if (string.IsNullOrWhiteSpace(input))
                 continue;
@@ -103,12 +112,28 @@ public class AgentCommand : Command
             if (input.ToLower() is "exit" or "quit" or "/quit")
                 break;
 
+            // 特殊命令：查看当前 provider
+            if (input.ToLower() is "/provider" or "/status")
+            {
+                AnsiConsole.MarkupLine($"[dim]当前 Provider:[/] [cyan]{agent.CurrentProvider}[/]");
+                continue;
+            }
+
             string response = "";
+            string provider = "";
+            
             await AnsiConsole.Status()
                 .StartAsync("思考中...", async ctx =>
                 {
+                    provider = agent.CurrentProvider;
                     response = await agent.ChatAsync(input);
                 });
+
+            // 如果降级了，显示提示
+            if (provider != agent.CurrentProvider)
+            {
+                AnsiConsole.MarkupLine($"[yellow]⚠️ 已自动降级到: {agent.CurrentProvider}[/]");
+            }
 
             AnsiConsole.MarkupLine($"[green]助手:[/] {response}");
         }
