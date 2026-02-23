@@ -1,5 +1,6 @@
 using MyClaw.Channels;
 using MyClaw.Channels.Uno;
+using MyClaw.Channels.WebUI;
 using MyClaw.Core.Configuration;
 using MyClaw.Core.Messaging;
 
@@ -46,13 +47,19 @@ public class ChannelManager
     /// </summary>
     public void InitializeChannels(ChannelsConfig config)
     {
+        // WebUI 渠道
+        if (config.WebUI.Enabled)
+        {
+            RegisterChannel(new WebUIChannel(config.WebUI, _messageBus));
+        }
+
         // Uno Platform 渠道
         if (config.Uno.Enabled)
         {
             RegisterChannel(new UnoPlatformChannel(config.Uno, _messageBus));
         }
 
-        // TODO: 其他渠道 (Telegram, Feishu, WeCom, WhatsApp, WebUI)
+        // TODO: 其他渠道 (Telegram, Feishu, WeCom, WhatsApp)
     }
 
     /// <summary>
