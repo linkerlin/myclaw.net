@@ -135,12 +135,14 @@ public static class ConfigurationLoader
         }
         
         // ==================== OpenAI 兼容模式检测 ====================
-        // 如果 BaseUrl 指向 OpenAI 兼容端点，强制使用 openai 类型
+        // 只在配置了 ANTHROPIC_API_KEY 且 BaseUrl 指向 OpenAI 兼容端点时，才切换为 openai
         var baseUrl = cfg.Provider.BaseUrl?.ToLowerInvariant() ?? "";
-        if (baseUrl.Contains("compatible-mode") || 
-            baseUrl.Contains("dashscope") ||
-            baseUrl.Contains("openai.azure") ||
-            (!string.IsNullOrEmpty(baseUrl) && !baseUrl.Contains("anthropic")))
+        var isOpenAICompatible = baseUrl.Contains("compatible-mode") || 
+                                 baseUrl.Contains("dashscope") ||
+                                 baseUrl.Contains("openai.azure");
+        
+        // 如果当前配置的是 anthropic 但实际端点是 OpenAI 兼容的，则切换
+        if (cfg.Provider.Type == "anthropic" && isOpenAICompatible)
         {
             cfg.Provider.Type = "openai";
         }
