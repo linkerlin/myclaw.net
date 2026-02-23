@@ -10,7 +10,7 @@ public class DailyBriefingServiceTests : IDisposable
     private readonly string _tempDir;
     private readonly MemoryStore _memoryStore;
     private readonly AnalyticsService _analyticsService;
-    private readonly EntityStore? _entityStore;
+    private readonly EntityStore _entityStore;
     private readonly DailyBriefingService _service;
 
     public DailyBriefingServiceTests()

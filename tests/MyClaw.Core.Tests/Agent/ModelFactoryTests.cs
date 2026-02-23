@@ -113,7 +113,7 @@ public class ModelFactoryTests
     {
         var config = new ProviderConfig
         {
-            Type = null,
+            Type = "",
             ApiKey = "test-key"
         };
 

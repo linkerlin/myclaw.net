@@ -12,14 +12,14 @@ namespace MyClaw.Agent;
 /// 自动降级模型提供者
 /// 当主要 Provider 失败时，自动切换到备用 Provider
 /// </summary>
-public class FallbackModelProvider
+public class AutoModelProvider
 {
     private readonly MyClawConfiguration _config;
     private readonly List<ProviderCandidate> _candidates;
     private int _currentIndex;
     private IModel? _currentModel;
 
-    public FallbackModelProvider(MyClawConfiguration config)
+    public AutoModelProvider(MyClawConfiguration config)
     {
         _config = config;
         _candidates = BuildProviderCandidates();
@@ -45,6 +45,14 @@ public class FallbackModelProvider
     public async Task<(IModel Model, string ProviderName)> GetModelAsync(
         Func<IModel, Task<bool>>? testFunc = null)
     {
+        Console.WriteLine($"\n========== FALLBACK MODEL PROVIDER ==========");
+        Console.WriteLine($"Total candidates: {_candidates.Count}");
+        foreach (var c in _candidates)
+        {
+            Console.WriteLine($"  - {c.Name}: Type={c.Config.Type}, Model={c.Config.Model}");
+        }
+        Console.WriteLine($"=============================================\n");
+        
         while (_currentIndex < _candidates.Count)
         {
             var candidate = _candidates[_currentIndex];
@@ -201,7 +209,7 @@ public class FallbackModelProvider
                 {
                     Type = _config.Provider.Type, // 使用当前配置的类型
                     ApiKey = myclawKey,
-                    BaseUrl = Environment.GetEnvironmentVariable("MYCLAW_BASE_URL") ?? _config.Provider.BaseUrl,
+                    BaseUrl = Environment.GetEnvironmentVariable("MYCLAW_BASE_URL") ?? _config.Provider.BaseUrl ?? "",
                     Model = _config.Provider.Model
                 }
             });
@@ -222,7 +230,7 @@ public class FallbackModelProvider
 /// </summary>
 public class FallbackAgent
 {
-    private readonly FallbackModelProvider _fallbackProvider;
+    private readonly AutoModelProvider _fallbackProvider;
     private readonly MyClawConfiguration _config;
     private readonly MemoryStore _memoryStore;
     private readonly SkillManager? _skillManager;
@@ -237,7 +245,7 @@ public class FallbackAgent
         _config = config;
         _memoryStore = memoryStore;
         _skillManager = skillManager;
-        _fallbackProvider = new FallbackModelProvider(config);
+        _fallbackProvider = new AutoModelProvider(config);
     }
 
     /// <summary>
@@ -266,8 +274,13 @@ public class FallbackAgent
     /// </summary>
     public async Task<string> ChatAsync(string message, string sessionId = "default")
     {
+        Console.WriteLine($"\n========== CHAT DEBUG ==========");
+        Console.WriteLine($"Message: {message}");
+        Console.WriteLine($"Current Provider: {CurrentProvider}");
+        
         if (_agent == null)
         {
+            Console.WriteLine("Agent is null, initializing...");
             await InitializeAsync();
         }
 
@@ -278,17 +291,23 @@ public class FallbackAgent
         {
             try
             {
+                Console.WriteLine($"Building message...");
                 var msg = Msg.Builder()
                     .Role("user")
                     .TextContent(message)
                     .AddMetadata("session_id", sessionId)
                     .Build();
-
+                
+                Console.WriteLine($"Calling agent...");
                 var response = await _agent!.Call(msg).FirstAsync();
-                var textContent = response.GetTextContent();
-                Console.WriteLine($"[Debug] Response type: {response.GetType().Name}");
-                Console.WriteLine($"[Debug] Text content: {textContent ?? "(null)"}");
-                return textContent ?? "无响应";
+                Console.WriteLine($"Got response, type: {response.GetType().FullName}");
+                
+                var finalContent = GetMsgTextContent(response);
+                
+                Console.WriteLine($"Final content: {finalContent}");
+                Console.WriteLine($"================================\n");
+
+                return finalContent ?? "无响应";
             }
             catch (Exception ex) when (IsRecoverableError(ex))
             {
@@ -328,6 +347,8 @@ public class FallbackAgent
             .SysPrompt(systemPrompt)
             .MaxIterations(_config.Agent.MaxToolIterations)
             .Verbose(_config.Agent.Verbose);
+
+        builder.AddTool(new MemoryTool(_memoryStore));
 
         if (_skillManager != null)
         {
@@ -383,6 +404,36 @@ public class FallbackAgent
 ");
 
         return string.Join("\n\n", parts);
+    }
+
+    private static string? GetMsgTextContent(object response)
+    {
+        var responseType = response.GetType();
+        Console.WriteLine($"[Debug] Msg properties: {string.Join(", ", responseType.GetProperties().Select(p => p.Name))}");
+        
+        var textProp = responseType.GetProperty("Text");
+        if (textProp != null)
+        {
+            var textValue = textProp.GetValue(response) as string;
+            Console.WriteLine($"[Debug] Text property value: {(textValue?.Length > 100 ? textValue?.Substring(0, 100) + "..." : textValue)}");
+            if (!string.IsNullOrEmpty(textValue) && textValue != "Done")
+            {
+                return textValue;
+            }
+        }
+ 
+        var contentProp = responseType.GetProperty("Content");
+        if (contentProp != null)
+        {
+            var content = contentProp.GetValue(response);
+            Console.WriteLine($"[Debug] Content property value: {(content?.ToString()?.Length > 100 ? content?.ToString()?.Substring(0, 100) + "..." : content?.ToString())}");
+            if (content is string strContent && !string.IsNullOrEmpty(strContent) && strContent != "Done")
+            {
+                return strContent;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>

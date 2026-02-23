@@ -5,21 +5,12 @@ namespace MyClaw.Core.Tests.Ace;
 public class TimeModeTests
 {
     [Theory]
-    [InlineData(6, TimeMode.Morning)]    // 06:00 -> Morning
-    [InlineData(8, TimeMode.Morning)]    // 08:00 -> Morning
-    [InlineData(9, TimeMode.Work)]       // 09:00 -> Work
-    [InlineData(11, TimeMode.Work)]      // 11:00 -> Work
-    [InlineData(12, TimeMode.Break)]     // 12:00 -> Break
-    [InlineData(13, TimeMode.Break)]     // 13:00 -> Break
-    [InlineData(14, TimeMode.Work)]      // 14:00 -> Work
-    [InlineData(17, TimeMode.Work)]      // 17:00 -> Work
-    [InlineData(18, TimeMode.Evening)]   // 18:00 -> Evening
-    [InlineData(21, TimeMode.Evening)]   // 21:00 -> Evening
-    [InlineData(22, TimeMode.Night)]     // 22:00 -> Night
-    [InlineData(23, TimeMode.Night)]     // 23:00 -> Night
-    [InlineData(0, TimeMode.Night)]      // 00:00 -> Night
-    [InlineData(5, TimeMode.Night)]      // 05:00 -> Night
-    public void GetCurrentMode_ShouldReturnCorrectMode(int hour, TimeMode expectedMode)
+    [InlineData(TimeMode.Morning)]
+    [InlineData(TimeMode.Work)]
+    [InlineData(TimeMode.Break)]
+    [InlineData(TimeMode.Evening)]
+    [InlineData(TimeMode.Night)]
+    public void GetCurrentMode_ShouldReturnCorrectMode(TimeMode expectedMode)
     {
         // 注意：这个测试依赖于当前时间，实际测试可能需要 mock
         // 这里我们只是测试 GetConfig 的逻辑
