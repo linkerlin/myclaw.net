@@ -207,7 +207,7 @@ public class AutoModelProvider
                 Name = "myclaw",
                 Config = new ProviderConfig
                 {
-                    Type = _config.Provider.Type, // 使用当前配置的类型
+                    Type = string.IsNullOrWhiteSpace(_config.Provider.Type) ? "openai" : _config.Provider.Type,
                     ApiKey = myclawKey,
                     BaseUrl = Environment.GetEnvironmentVariable("MYCLAW_BASE_URL") ?? _config.Provider.BaseUrl ?? "",
                     Model = _config.Provider.Model

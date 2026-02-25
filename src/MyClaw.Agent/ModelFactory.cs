@@ -13,7 +13,9 @@ public static class ModelFactory
             throw new InvalidOperationException("API key is required");
         }
 
-        var provider = config.Type?.ToLowerInvariant() ?? "openai";
+        var provider = string.IsNullOrWhiteSpace(config.Type)
+            ? "openai"
+            : config.Type.Trim().ToLowerInvariant();
         var modelName = config.Model ?? AgentScope.Core.ModelFactoryExtensions.GetDefaultModel(provider);
         
         Console.WriteLine($"[ModelFactory] Creating model: provider={provider}, model={modelName}");
