@@ -6,6 +6,7 @@ using MyClaw.Core.Entities;
 using MyClaw.Core.Evolution;
 using MyClaw.Core.Execution;
 using MyClaw.Core.Memory;
+using MyClaw.Core.Ribosome;
 using MyClaw.Skills;
 
 namespace MyClaw.MCP;
@@ -25,6 +26,7 @@ public class McpServer
     private SkillManager _skillManager = null!;
     private CommandExecutor _commandExecutor = null!;
     private SignalDetector _signalDetector = null!;
+    private RibosomeLoader _ribosomeLoader = null!;
     private string _workspace = null!;
 
     public McpServer(int port, string? workspacePath = null)
@@ -49,6 +51,16 @@ public class McpServer
         _skillManager.LoadSkills();
         _commandExecutor = new CommandExecutor();
         _signalDetector = new SignalDetector();
+
+        // 初始化 RibosomeLoader - 从项目根目录的 templates 文件夹加载
+        var templatesDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "templates");
+        if (!Directory.Exists(templatesDir))
+        {
+            // 尝试从当前工作目录的上级查找
+            var cwd = Directory.GetCurrentDirectory();
+            templatesDir = Path.Combine(cwd, "templates");
+        }
+        _ribosomeLoader = new RibosomeLoader(_workspace, templatesDir);
 
         await _entityStore.LoadAsync();
 
@@ -208,87 +220,21 @@ public class McpServer
 
     private object HandleListTools()
     {
-        var tools = new List<object>
-        {
-            new
-            {
-                name = "myclaw_update",
-                description = "【本能：神经重塑】修改核心认知文件",
-                inputSchema = new
-                {
-                    type = "object",
-                    properties = new
-                    {
-                        filename = new { type = "string", description = "文件名", @enum = new[] { "AGENTS.md", "SOUL.md", "USER.md", "TOOLS.md", "IDENTITY.md", "MEMORY.md", "HEARTBEAT.md" } },
-                        content = new { type = "string", description = "文件内容" }
-                    },
-                    required = new[] { "filename", "content" }
-                }
-            },
-            new
-            {
-                name = "myclaw_note",
-                description = "【本能：海马体写入】追加今日日志",
-                inputSchema = new
-                {
-                    type = "object",
-                    properties = new { text = new { type = "string", description = "日志内容" } },
-                    required = new[] { "text" }
-                }
-            },
-            new
-            {
-                name = "myclaw_read",
-                description = "【本能：全脑唤醒】读取上下文和记忆",
-                inputSchema = new
-                {
-                    type = "object",
-                    properties = new { mode = new { type = "string", description = "读取模式", @enum = new[] { "full", "minimal" } } }
-                }
-            },
-            new
-            {
-                name = "myclaw_archive",
-                description = "【日志归档】归档今日日志",
-                inputSchema = new { type = "object", description = "无需参数" }
-            },
-            new
-            {
-                name = "myclaw_entity",
-                description = "【本能：概念连接】管理实体知识图谱",
-                inputSchema = new
-                {
-                    type = "object",
-                    properties = new
-                    {
-                        action = new { type = "string", description = "操作类型", @enum = new[] { "add", "remove", "link", "query", "list" } },
-                        name = new { type = "string", description = "实体名称" },
-                        type = new { type = "string", description = "实体类型", @enum = new[] { "person", "project", "tool", "concept", "place", "other" } },
-                        attributes = new { type = "object", description = "属性" },
-                        relation = new { type = "string", description = "关系" }
-                    },
-                    required = new[] { "action" }
-                }
-            },
-            new
-            {
-                name = "myclaw_exec",
-                description = "【本能：感官与手】安全执行终端命令",
-                inputSchema = new
-                {
-                    type = "object",
-                    properties = new { command = new { type = "string", description = "要执行的命令" } },
-                    required = new[] { "command" }
-                }
-            },
-            new
-            {
-                name = "myclaw_status",
-                description = "【系统诊断】返回完整状态",
-                inputSchema = new { type = "object", description = "无需参数" }
-            }
-        };
+        var tools = new List<object>();
 
+        // 从 RibosomeLoader 加载本能工具
+        var mcpTools = _ribosomeLoader.GetMcpToolsAsync().GetAwaiter().GetResult();
+        foreach (var tool in mcpTools)
+        {
+            tools.Add(new
+            {
+                name = tool.Name,
+                description = tool.Description,
+                inputSchema = tool.InputSchema
+            });
+        }
+
+        // 添加技能工具
         foreach (var skill in _skillManager.LoadedSkills)
         {
             tools.Add(new
@@ -336,6 +282,12 @@ public class McpServer
                 "myclaw_entity" => await ToolEntityAsync(args),
                 "myclaw_exec" => await ToolExecAsync(args),
                 "myclaw_status" => ToolStatus(),
+                "myclaw_skill" => await ToolSkillManagerAsync(args),
+                "myclaw_introspect" => ToolIntrospect(args),
+                "myclaw_dream" => ToolDream(),
+                "myclaw_immune" => ToolImmune(),
+                "myclaw_heal" => ToolHeal(),
+                "myclaw_nociception" => ToolNociception(args),
                 _ => name.StartsWith("skill_") ? await ToolSkillAsync(name, args) : $"未知工具: {name}"
             };
         }
@@ -524,6 +476,224 @@ public class McpServer
 
         var content = skill.GetSystemPrompt();
         return $"## Skill: {skill.Name}\n\n{content}\n\nInput: {JsonSerializer.Serialize(args)}";
+    }
+
+    private async Task<string> ToolSkillManagerAsync(Dictionary<string, object> args)
+    {
+        var action = args.TryGetValue("action", out var a) ? a.ToString() : "list";
+
+        return action switch
+        {
+            "list" => ToolSkillList(),
+            "create" => await ToolSkillCreateAsync(args),
+            "delete" => ToolSkillDelete(args),
+            _ => "未知操作"
+        };
+    }
+
+    private string ToolSkillList()
+    {
+        if (_skillManager.LoadedSkills.Count == 0) return "没有已安装的技能。";
+        var lines = _skillManager.LoadedSkills.Select(s => $"- **{s.Name}**: {s.Description}");
+        return $"## Skills ({_skillManager.LoadedSkills.Count})\n{string.Join("\n", lines)}";
+    }
+
+    private async Task<string> ToolSkillCreateAsync(Dictionary<string, object> args)
+    {
+        if (!args.TryGetValue("name", out var nameObj) || nameObj == null)
+            return "错误: 需要提供 name 参数。";
+        if (!args.TryGetValue("description", out var descObj) || descObj == null)
+            return "错误: 需要提供 description 参数。";
+        if (!args.TryGetValue("content", out var contentObj) || contentObj == null)
+            return "错误: 需要提供 content 参数。";
+
+        var name = nameObj.ToString()!;
+        var description = descObj.ToString()!;
+        var content = contentObj.ToString()!;
+
+        var skillPath = Path.Combine(_workspace, "skills", $"{name}.md");
+        Directory.CreateDirectory(Path.GetDirectoryName(skillPath)!);
+
+        var skillContent = $"---\ndescription: {description}\n---\n\n{content}";
+        await File.WriteAllTextAsync(skillPath, skillContent);
+
+        _skillManager.LoadSkills();
+        return $"技能 '{name}' 已创建。";
+    }
+
+    private string ToolSkillDelete(Dictionary<string, object> args)
+    {
+        if (!args.TryGetValue("name", out var nameObj) || nameObj == null)
+            return "错误: 需要提供 name 参数。";
+
+        var name = nameObj.ToString()!;
+        var skillPath = Path.Combine(_workspace, "skills", $"{name}.md");
+
+        if (!File.Exists(skillPath)) return $"技能 '{name}' 不存在。";
+
+        File.Delete(skillPath);
+        _skillManager.LoadSkills();
+        return $"技能 '{name}' 已删除。";
+    }
+
+    private string ToolIntrospect(Dictionary<string, object> args)
+    {
+        var scope = args.TryGetValue("scope", out var s) ? s.ToString() : "summary";
+
+        var entityCount = _entityStore.GetCountAsync().GetAwaiter().GetResult();
+        var archivedCount = _memoryStore.GetArchivedCount();
+        var skillCount = _skillManager.LoadedSkills.Count;
+
+        return scope switch
+        {
+            "summary" => $"""
+                ## Introspection Summary
+
+                - Entities: {entityCount}
+                - Archived Memories: {archivedCount}
+                - Skills: {skillCount}
+                - Workspace: {_workspace}
+                """,
+            "tools" => $"""
+                ## Tool Usage Analysis
+
+                Available tools from RIBOSOME:
+                {string.Join("\n", _ribosomeLoader.GetToolNamesAsync().GetAwaiter().GetResult().Select(t => $"- {t}"))}
+
+                Skills: {skillCount}
+                """,
+            "files" => $"""
+                ## File Analysis
+
+                Workspace: {_workspace}
+                - Memory files: {(_memoryStore != null ? "active" : "none")}
+                - Entity store: {entityCount} entities
+                - Skills directory: {skillCount} files
+                """,
+            _ => "未知 scope 参数"
+        };
+    }
+
+    private string ToolDream()
+    {
+        var today = _memoryStore.ReadToday();
+        if (string.IsNullOrEmpty(today)) return "没有今日日志可供分析。";
+
+        var evaluation = _memoryStore.EvaluateDistillation();
+        return $"""
+            ## Dream Analysis
+
+            今日活动记录长度: {today.Length} 字符
+            蒸馏建议: {(evaluation.ShouldDistill ? $"需要 ({evaluation.Urgency})" : "暂不需要")}
+            原因: {evaluation.Reason}
+
+            意义: 回顾今日记录，识别模式和洞察，准备长期记忆整合。
+            """;
+    }
+
+    private string ToolImmune()
+    {
+        var backupDir = Path.Combine(_workspace, ".backup");
+        Directory.CreateDirectory(backupDir);
+
+        var coreFiles = new[] { "IDENTITY.md", "SOUL.md", "AGENTS.md", "USER.md", "TOOLS.md", "MEMORY.md" };
+        var backedUp = new List<string>();
+
+        foreach (var file in coreFiles)
+        {
+            var path = Path.Combine(_workspace, file);
+            if (File.Exists(path))
+            {
+                var backupPath = Path.Combine(backupDir, file);
+                File.Copy(path, backupPath, overwrite: true);
+                backedUp.Add(file);
+            }
+        }
+
+        return $"免疫升级完成。已备份 {backedUp.Count} 个核心文件: {string.Join(", ", backedUp)}";
+    }
+
+    private string ToolHeal()
+    {
+        var backupDir = Path.Combine(_workspace, ".backup");
+        if (!Directory.Exists(backupDir)) return "没有找到备份目录。";
+
+        var coreFiles = new[] { "IDENTITY.md", "SOUL.md", "AGENTS.md", "USER.md", "TOOLS.md", "MEMORY.md" };
+        var restored = new List<string>();
+
+        foreach (var file in coreFiles)
+        {
+            var backupPath = Path.Combine(backupDir, file);
+            if (File.Exists(backupPath))
+            {
+                var targetPath = Path.Combine(_workspace, file);
+                File.Copy(backupPath, targetPath, overwrite: true);
+                restored.Add(file);
+            }
+        }
+
+        return $"基因修复完成。已恢复 {restored.Count} 个核心文件: {string.Join(", ", restored)}";
+    }
+
+    private string ToolNociception(Dictionary<string, object> args)
+    {
+        var action = args.TryGetValue("action", out var a) ? a.ToString() : "list";
+        var nociceptionPath = Path.Combine(_workspace, "NOCICEPTION.md");
+
+        return action switch
+        {
+            "list" => File.Exists(nociceptionPath) ? File.ReadAllText(nociceptionPath) : "没有痛觉记忆。",
+            "record" => ToolNociceptionRecord(args, nociceptionPath),
+            "check" => ToolNociceptionCheck(args, nociceptionPath),
+            "clear" => ToolNociceptionClear(nociceptionPath),
+            _ => "未知操作"
+        };
+    }
+
+    private string ToolNociceptionRecord(Dictionary<string, object> args, string path)
+    {
+        if (!args.TryGetValue("stimulus", out var stimulus) || stimulus == null)
+            return "错误: 需要 stimulus 参数。";
+        if (!args.TryGetValue("harm", out var harm) || harm == null)
+            return "错误: 需要 harm 参数。";
+        if (!args.TryGetValue("strategy", out var strategy) || strategy == null)
+            return "错误: 需要 strategy 参数。";
+
+        var entry = $"""
+
+            ## 痛觉记录 - {DateTime.Now:yyyy-MM-dd HH:mm}
+
+            **触发点**: {stimulus}
+            **伤害结果**: {harm}
+            **规避方案**: {strategy}
+
+            """;
+
+        File.AppendAllText(path, entry);
+        return "痛觉记忆已记录。";
+    }
+
+    private string ToolNociceptionCheck(Dictionary<string, object> args, string path)
+    {
+        if (!File.Exists(path)) return "没有痛觉记忆。";
+
+        if (!args.TryGetValue("stimulus", out var stimulus) || stimulus == null)
+            return "错误: 需要 stimulus 参数。";
+
+        var content = File.ReadAllText(path);
+        return content.Contains(stimulus.ToString()!)
+            ? $"⚠️ 警告: '{stimulus}' 在痛觉记忆中找到匹配！"
+            : $"✅ '{stimulus}' 未在痛觉记忆中找到。";
+    }
+
+    private string ToolNociceptionClear(string path)
+    {
+        if (File.Exists(path))
+        {
+            File.Delete(path);
+            return "痛觉记忆已清除。";
+        }
+        return "没有需要清除的痛觉记忆。";
     }
 
     private object HandleListResources()

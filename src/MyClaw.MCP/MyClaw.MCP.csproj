@@ -14,4 +14,11 @@
     <ProjectReference Include="..\MyClaw.Skills\MyClaw.Skills.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="..\..\templates\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>templates\%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </None>
+  </ItemGroup>
+
 </Project>
