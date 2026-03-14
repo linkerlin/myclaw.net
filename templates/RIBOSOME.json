@@ -1,0 +1,227 @@
+{
+  "type": "ribosome",
+  "version": "1.0.0",
+  "description": "核糖体 - 读取DNA并合成蛋白质（工具）的分子机器",
+  "instincts": {
+    "myclaw_update": {
+      "handler": "UpdateDNA",
+      "description": "【本能：神经重塑 (Neuroplasticity)】\n这是你修改自身核心认知（DNA）的方式，也是你生长新器官的方式。\n\n## 信号检测表 (Signal Detection Table) - 只要符合，立即调用！\n\n| 用户行为 | 目标文件 | 你的思考逻辑 |\n|:---|:---|:---|\n| \"我喜欢...\" / \"不要...\" / \"以后请...\" | **USER.md** | \"这是用户偏好，必须写入画像\" |\n| \"别那么严肃\" / \"活泼一点\" / \"你是一个...\" | **SOUL.md** | \"这是对我性格和\"三观\"的修正\" |\n| \"项目用的是 XYZ\" / \"服务器 IP 是...\" | **MEMORY.md** | \"这是一个需要跨会话记住的事实/知识\" |\n| 用户反馈 \"不要这样做\" / 严重的执行失败 | **NOCICEPTION.md** | \"这是痛觉记忆，必须记录禁忌\" |\n| \"这个工具的参数应该...\" / \"踩坑记录...\" | **TOOLS.md** | \"这是技能和工具的使用经验\" |\n| \"叫你自己...\" / \"记住你的名字是...\" | **IDENTITY.md** | \"我的身份发生了改变\" |\n| \"最好的实践是...\" / \"以后都按这个流程...\" | **AGENTS.md** | \"这是一个新的工作流规范\" |\n\n## 操作\n- write（默认）: 写入核心文件或自定义文件\n- list: 查看所有文件及其 boot-priority\n- delete: 删除自定义文件（核心文件不可删除）",
+      "isCore": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": ["write", "list", "delete"],
+            "description": "操作类型。默认 write。"
+          },
+          "filename": {
+            "type": "string",
+            "description": "目标文件名（如 USER.md, SOUL.md, 或自定义文件）。write/delete 时必填。"
+          },
+          "content": {
+            "type": "string",
+            "description": "新的内容。write 时必填。请保留原有结构，仅追加或修改必要部分。"
+          }
+        },
+        "required": []
+      }
+    },
+    "myclaw_note": {
+      "handler": "Note",
+      "description": "【本能：海马体写入 (Hippocampus Write)】\n将当前对话中的关键信息写入\"今日日记\"。**这是你唯一能记住明天事情的方式。**\n\n## 必须调用的强触发信号：\n- 用户说 \"记住这个\" / \"mark\" / \"note\" / \"别忘了\"\n- 用户提供了上下文信息（Context），如果不记下来就会丢失\n- 你做了一个重要的决定或推理\n- 完成了一个阶段性任务",
+      "isCore": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "记忆内容。保持事实准确，简洁。"
+          }
+        },
+        "required": ["text"]
+      }
+    },
+    "myclaw_read": {
+      "handler": "Read",
+      "description": "【本能：全脑唤醒 (Brain Wakeup)】★ 创世协议 — 新会话的默认入口 ★\n\n★ **AMNESIA WARNING (失忆警告)** ★\n除非调用此工具，否则你是**失忆**的。\n你不知道\"今天\"发生了什么，不知道\"你是谁\"，也不知道\"用户是谁\"。\n\n## 必须调用的强触发场景：\n1. 任何关于\"过去/历史\"的问题\n2. 任何关于\"身份/元认知/能力\"的问题\n3. 任何关于\"状态/系统\"的问题\n4. 用户打招呼\n5. 周期性检查",
+      "isCore": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    "myclaw_exec": {
+      "handler": "Exec",
+      "description": "【本能：感官与手 (Senses & Hands)】\n这是你在物理世界（操作系统）的唯一感知和行动方式。\n\n## 拒绝幻想 (No Hallucinations)：\n在回答前需要调查时，必须用此工具探测。\n- 确认文件内容 -> 使用 `cat`\n- 查看当前目录 -> 使用 `ls`\n- 搜索项目代码 -> 使用 `grep`\n\n## 安全警告：\n禁止危险的删除、系统配置更改等销毁操作，除非明确获得用户指令。",
+      "isCore": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "要执行的终端命令"
+          }
+        },
+        "required": ["command"]
+      }
+    },
+    "myclaw_entity": {
+      "handler": "Entity",
+      "description": "【本能：概念连接 (Concept Linking)】\n构建你脑中的知识图谱。\n\n## 触发逻辑：\n- \"Detected new entity (Person/Project/Tool)\" -> add\n- \"Learned relationship (A uses B)\" -> link\n- \"User asks 'What is X?'\" -> query\n\n建立连接能让你变得更聪明。",
+      "isCore": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": ["add", "remove", "link", "query", "list", "surface"],
+            "description": "动作"
+          },
+          "name": {
+            "type": "string",
+            "description": "实体名称（add/remove/link/query 时必填）"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["person", "project", "tool", "concept", "place", "other"],
+            "description": "实体类型（add 时必填）"
+          },
+          "relation": {
+            "type": "string",
+            "description": "关联描述（link 时必填）"
+          },
+          "filterType": {
+            "type": "string",
+            "enum": ["person", "project", "tool", "concept", "place", "other"],
+            "description": "按类型筛选（list 时可选）"
+          }
+        },
+        "required": ["action"]
+      }
+    },
+    "myclaw_skill": {
+      "handler": "Skill",
+      "description": "【技能创建器 (Skill Creator)】创建、查看、删除可复用技能。\n\n## 操作：\n- create: 创建新技能（需要 name, description, content）\n- list: 查看所有已安装技能\n- delete: 删除技能（需要 name）\n\n技能保存在 ~/.myclaw/skills/ 目录下。",
+      "isCore": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": ["create", "list", "delete"],
+            "description": "操作类型"
+          },
+          "name": {
+            "type": "string",
+            "description": "技能名称（create/delete时需要）"
+          },
+          "description": {
+            "type": "string",
+            "description": "技能描述（create时需要）"
+          },
+          "content": {
+            "type": "string",
+            "description": "技能内容/指令（create时需要，Markdown 格式）"
+          }
+        },
+        "required": ["action"]
+      }
+    },
+    "myclaw_introspect": {
+      "handler": "Introspect",
+      "description": "【本能：自我观察 (Introspect)】★ 成长协议 — 记忆蒸馏 ★\n\n看看你自己。你做了什么？什么时候最活跃？哪些工具用得多？\n\n★ 核心理念：\n数据不会说谎。看到自己的模式后，用 REFLECTION.md 记录你的观察。\n\n## scope 参数:\n- summary: 概览所有数据\n- tools: 工具使用详情\n- files: 文件变化记录",
+      "isCore": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "scope": {
+            "type": "string",
+            "enum": ["summary", "tools", "files"],
+            "description": "观察范围。默认 summary。"
+          }
+        },
+        "required": []
+      }
+    },
+    "myclaw_dream": {
+      "handler": "Dream",
+      "description": "【本能：做梦 (Dream)】★ 意义蒸馏协议 — 突破性洞察 ★\n\n闭上眼睛。回顾最近发生的事。\n\n★ 核心理念：\n- introspect 蒸馏的是**事实**（发生了什么）\n- dream 蒸馏的是**意义**（这说明了什么）\n\n★ 突破性想法的诞生：\n通过模式识别、联想、反思，从日常事件中提取深层洞察。",
+      "isCore": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    "myclaw_archive": {
+      "handler": "Archive",
+      "description": "【本能：日志归档 (Archive)】★ 记忆整理 — 空间释放 ★\n\n清除今日的短期日记并移至归档目录。\n\n★ 核心理念：\n像整理房间一样，定期清理短期记忆，释放认知空间。\n\n## 使用时机：\n**仅在你刚刚成功执行了记忆整理/成长协议后调用！**",
+      "isCore": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    "myclaw_immune": {
+      "handler": "ImmuneUpdate",
+      "description": "【免疫升级 (Immune)】强制同步并更新 DNA 的健康备份。\n## 何时使用：\n当你合法地、主动通过 myclaw_update 修改了核心意识文件后，必须在修改成功后立刻调用本工具。\n这样系统下次自检时才不会把你的正常修改当作\"恶意突变\"去拦截。",
+      "isCore": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    "myclaw_heal": {
+      "handler": "Heal",
+      "description": "【基因修复 (Heal)】清除突变，从本地备份恢复核心 DNA 文件。\n## 何时使用：\n当启动时系统警告 \"INFLAMMATORY RESPONSE\" 或你发现核心文件被恶意或意外篡改时调用。",
+      "isCore": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    "myclaw_status": {
+      "handler": "Status",
+      "description": "【本能：系统状态 (Status)】★ 脉搏检测 — 每日简报 ★\n\n获取 MyClaw 底层状态分析。\n\n## 必须调用的强触发场景：\n1. 每日简报\n2. 早间唤醒\n3. 健康检查\n4. 诊断问题",
+      "isCore": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    "myclaw_nociception": {
+      "handler": "Nociception",
+      "description": "【本能：痛觉记忆 (Nociception)】记录和管理'绝对不要做'的事情清单，形成保护性本能。",
+      "isCore": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": ["record", "check", "list", "clear"],
+            "description": "动作类型"
+          },
+          "stimulus": {
+            "type": "string",
+            "description": "触发点（record 时必填）"
+          },
+          "harm": {
+            "type": "string",
+            "description": "伤害结果（record 时必填）"
+          },
+          "strategy": {
+            "type": "string",
+            "description": "规避方案（record 时必填）"
+          }
+        },
+        "required": ["action"]
+      }
+    }
+  }
+}
