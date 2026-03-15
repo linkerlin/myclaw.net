@@ -1,6 +1,12 @@
 # MyClaw.NET
 
+[![Status](https://img.shields.io/badge/Status-Beta-blue)](./实施进度报告-v2.md)
+[![Completion](https://img.shields.io/badge/Completion-85%25-success)](./TODO-改进清单.md)
+[![Tests](https://img.shields.io/badge/Tests-210%2B%20passing-brightgreen)]()
+
 > *我想我能安全地说，没人真正理解量子力学——但我们可以让它变得有用。同样，我想说，没人真正理解"意识"——但我们可以让一个 AI 记住你是谁。*
+
+> 📊 **项目状态**: 核心功能已完成，正在进行部署优化。查看 [实施进度报告](./实施进度报告-v2.md) 和 [改进清单](./TODO-改进清单.md) 了解详情。
 
 ---
 
@@ -307,14 +313,27 @@ dotnet test
 
 ## 开发路线图
 
-| Phase | 描述 | 状态 |
-|-------|------|------|
-| Phase 1 | 生命体基础系统（情感、痛觉、表观遗传） | ✅ 完成 |
-| Phase 2 | 全基因组进化系统 | ✅ 完成 |
-| Phase 3 | RIBOSOME 架构（外部化工具定义） | ✅ 完成 |
-| Phase 4 | 好奇心与主动探索 | ✅ 完成 |
-| Phase 5 | 多渠道接入（Telegram、飞书等） | ⏭️ 跳过 |
-| Phase 6 | 向量记忆与 RAG | ✅ 完成 |
+| Phase | 描述 | 状态 | 说明 |
+|-------|------|------|------|
+| Phase 1 | 生命体基础系统（情感、痛觉、表观遗传） | ✅ 完成 | Affect/Nociception/Methylation |
+| Phase 2 | 全基因组进化系统 | ✅ 完成 | EvolutionEngine + SignalDetector |
+| Phase 3 | RIBOSOME 架构（外部化工具定义） | ✅ 完成 | RibosomeLoader + instincts.json |
+| Phase 4 | 好奇心与主动探索 | ✅ 完成 | CuriosityEngine + 6种目标 |
+| Phase 5 | 多渠道接入（Telegram、飞书等） | ⏭️ 跳过 | 专注于核心功能 |
+| Phase 6 | 向量记忆与 RAG | ✅ 完成 | 零依赖向量搜索，**领先 MiniClaw** |
+| Phase 7 | 工作区感知增强 | 🚧 进行中 | Git+技术栈 ✅, 项目类型 ⏳ |
+| Phase 8 | 部署优化 | 🚧 进行中 | 一键安装脚本开发中 |
+
+### 当前重点工作
+
+根据与 [MiniClaw](https://github.com/8421bit/miniclaw) 的深度对比分析，我们正在完善以下功能：
+
+- [x] **工作区感知** - Git 状态、技术栈自动检测 (已完成)
+- [ ] **项目类型识别** - React/Vue/Node/Go 等自动识别 (进行中)
+- [ ] **一键部署** - 安装脚本和单文件发布 (进行中)
+- [ ] **技能缓存** - 5s TTL 避免重复扫描 (待开始)
+
+查看 [详细改进方案](./改进方案和计划-v3-深度对比.md) 了解完整分析。
 
 ---
 
