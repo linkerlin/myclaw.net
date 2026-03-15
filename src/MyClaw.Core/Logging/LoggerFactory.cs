@@ -47,10 +47,12 @@ public static class LoggerFactory
     /// </summary>
     private static Microsoft.Extensions.Logging.ILoggerFactory CreateFactory()
     {
-        // 配置 Serilog
-        Log.Logger = new LoggerConfiguration()
+        // 配置 Serilog - 使用 stderr 输出以避免干扰 stdout（MCP stdio 兼容）
+        Serilog.Log.Logger = new LoggerConfiguration()
             .MinimumLevel.Debug()
-            .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] [{SourceContext}] {Message:lj}{NewLine}{Exception}")
+            .WriteTo.Console(
+                outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] [{SourceContext}] {Message:lj}{NewLine}{Exception}",
+                standardErrorFromLevel: Serilog.Events.LogEventLevel.Debug)  // 所有日志输出到 stderr
             .CreateLogger();
 
         return new Microsoft.Extensions.Logging.LoggerFactory()
@@ -62,6 +64,6 @@ public static class LoggerFactory
     /// </summary>
     public static void Shutdown()
     {
-        Log.CloseAndFlush();
+        Serilog.Log.CloseAndFlush();
     }
 }

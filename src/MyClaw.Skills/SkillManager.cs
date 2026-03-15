@@ -102,7 +102,8 @@ public class SkillManager
         // 只在首次加载或调试时输出
         if (_cacheMisses <= 1)
         {
-            Console.WriteLine($"[skills] 从 {_skillsDirectory} 加载了 {_skills.Count} 个技能");
+            // Use stderr to avoid stdout pollution for MCP stdio mode
+            Console.Error.WriteLine($"[skills] Loaded {_skills.Count} skills from {_skillsDirectory}");
         }
     }
 

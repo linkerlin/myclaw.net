@@ -272,7 +272,8 @@ public class PersistentVectorStore : IVectorStore, IDisposable
                 _dirtyEntries.Clear();
                 _lastSaveTime = DateTime.UtcNow;
 
-                Console.WriteLine($"[vector-memory] 已保存 {data.Entries.Count} 条向量记忆到 {Path.GetFileName(savePath)} ({GetStorageSize() / 1024} KB)");
+                // Log to stderr to avoid stdout pollution for MCP stdio mode
+                Console.Error.WriteLine($"[vector-memory] Saved {data.Entries.Count} entries to {Path.GetFileName(savePath)} ({GetStorageSize() / 1024} KB)");
             }
             catch (Exception ex)
             {
@@ -302,7 +303,8 @@ public class PersistentVectorStore : IVectorStore, IDisposable
 
         if (!File.Exists(loadPath))
         {
-            Console.WriteLine($"[vector-memory] 存储文件不存在: {loadPath}");
+            // File doesn't exist, this is normal for first run - use stderr
+            Console.Error.WriteLine($"[vector-memory] Storage file not found: {loadPath}");
             return;
         }
 
@@ -341,11 +343,11 @@ public class PersistentVectorStore : IVectorStore, IDisposable
 
             _lastSaveTime = DateTime.UtcNow;
 
-            Console.WriteLine($"[vector-memory] 已加载 {data.Entries.Count} 条向量记忆 (维度: {data.Dimension})");
+            Console.Error.WriteLine($"[vector-memory] Loaded {data.Entries.Count} entries (dimension: {data.Dimension})");
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[vector-memory] 加载失败: {ex.Message}");
+            Console.Error.WriteLine($"[vector-memory] Load failed: {ex.Message}");
             throw;
         }
     }
@@ -402,7 +404,7 @@ public class PersistentVectorStore : IVectorStore, IDisposable
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[vector-memory] 自动保存失败: {ex.Message}");
+            Console.Error.WriteLine($"[vector-memory] Auto-save failed: {ex.Message}");
         }
     }
 
@@ -486,7 +488,7 @@ public class PersistentVectorStore : IVectorStore, IDisposable
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[vector-memory] 最终保存失败: {ex.Message}");
+                Console.Error.WriteLine($"[vector-memory] Final save failed: {ex.Message}");
             }
         }
     }

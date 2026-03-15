@@ -8,6 +8,7 @@ using MyClaw.Core.Configuration;
 using MyClaw.Core.Entities;
 using MyClaw.Core.Evolution;
 using MyClaw.Core.Execution;
+using MyClaw.Core.Logging;
 using MyClaw.Core.Memory;
 using MyClaw.Core.Ribosome;
 using MyClaw.Skills;
@@ -106,7 +107,7 @@ public class McpServer
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[MCP] 接受连接错误: {ex.Message}");
+                Log.Error($"[MCP] Accept connection error: {ex.Message}");
             }
         }
     }
@@ -147,7 +148,7 @@ public class McpServer
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[MCP] 错误: {ex.Message}");
+            Log.Error($"[MCP] Error: {ex.Message}");
             response.StatusCode = 500;
             await WriteJsonAsync(response, new { error = ex.Message });
         }
