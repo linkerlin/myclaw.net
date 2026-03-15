@@ -1,6 +1,9 @@
+using System.Diagnostics;
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using MyClaw.Core.Analytics;
+using MyClaw.Core.Briefing;
 using MyClaw.Core.Configuration;
 using MyClaw.Core.Entities;
 using MyClaw.Core.Evolution;
@@ -27,6 +30,9 @@ public class McpServer
     private CommandExecutor _commandExecutor = null!;
     private SignalDetector _signalDetector = null!;
     private RibosomeLoader _ribosomeLoader = null!;
+    private AnalyticsService _analyticsService = null!;
+    private ToolUsageTracker _toolUsageTracker = null!;
+    private DailyBriefingService _dailyBriefingService = null!;
     private string _workspace = null!;
 
     public McpServer(int port, string? workspacePath = null)
@@ -61,6 +67,11 @@ public class McpServer
             templatesDir = Path.Combine(cwd, "templates");
         }
         _ribosomeLoader = new RibosomeLoader(_workspace, templatesDir);
+
+        _analyticsService = new AnalyticsService(_workspace);
+        _toolUsageTracker = new ToolUsageTracker(_workspace);
+        var statisticsReporter = new StatisticsReporter(_analyticsService, _toolUsageTracker);
+        _dailyBriefingService = new DailyBriefingService(_memoryStore, _analyticsService, _entityStore, statisticsReporter, _toolUsageTracker);
 
         await _entityStore.LoadAsync();
 
@@ -245,6 +256,14 @@ public class McpServer
             });
         }
 
+        // 服务端内置工具（与 v3 每日简报对齐）
+        tools.Add(new
+        {
+            name = "myclaw_briefing",
+            description = "生成每日简报：工具使用、记忆与实体、待办提醒、今日建议等。",
+            inputSchema = new { type = "object", properties = new { }, description = "无需参数" }
+        });
+
         return new { tools };
     }
 
@@ -263,7 +282,12 @@ public class McpServer
             args = JsonSerializer.Deserialize<Dictionary<string, object>>(argsEl.GetRawText());
         }
 
+        var sw = Stopwatch.StartNew();
         var result = await ExecuteToolAsync(name, args);
+        sw.Stop();
+        var success = !result.StartsWith("错误") && !result.StartsWith("错误:");
+        _analyticsService.TrackToolCall(name);
+        _ = _toolUsageTracker.RecordToolCallAsync(name, success, (int)sw.ElapsedMilliseconds);
         return new { content = new[] { new { type = "text", text = result } } };
     }
 
@@ -288,6 +312,7 @@ public class McpServer
                 "myclaw_immune" => ToolImmune(),
                 "myclaw_heal" => ToolHeal(),
                 "myclaw_nociception" => ToolNociception(args),
+                "myclaw_briefing" => await ToolBriefingAsync(),
                 _ => name.StartsWith("skill_") ? await ToolSkillAsync(name, args) : $"未知工具: {name}"
             };
         }
@@ -438,6 +463,11 @@ public class McpServer
         var command = args["command"].ToString()!;
         var result = await _commandExecutor.ExecuteAsync(command);
         return result.IsSuccess ? result.Output : $"错误 (退出码 {result.ExitCode}): {result.Output}";
+    }
+
+    private async Task<string> ToolBriefingAsync()
+    {
+        return await _dailyBriefingService.GenerateBriefingAsync();
     }
 
     private string ToolStatus()
@@ -702,7 +732,8 @@ public class McpServer
         {
             new { uri = "myclaw://context", name = "MyClaw Context", mimeType = "text/markdown", description = "完整的上下文和记忆" },
             new { uri = "myclaw://skills", name = "Skills Index", mimeType = "text/markdown", description = "技能列表" },
-            new { uri = "myclaw://status", name = "MyClaw Status", mimeType = "text/markdown", description = "系统状态" }
+            new { uri = "myclaw://status", name = "MyClaw Status", mimeType = "text/markdown", description = "系统状态" },
+            new { uri = "myclaw://briefing", name = "Daily Briefing", mimeType = "text/markdown", description = "每日简报（工具使用、记忆、待办、建议）" }
         };
 
         return new { resources };
@@ -716,13 +747,21 @@ public class McpServer
         }
 
         var uri = uriEl.GetString() ?? "";
-        var content = uri switch
+        string content;
+        if (uri == "myclaw://briefing")
         {
-            "myclaw://context" => ToolRead(new Dictionary<string, object>()),
-            "myclaw://skills" => string.Join("\n", _skillManager.LoadedSkills.Select(s => $"- {s.Name}: {s.Description}")),
-            "myclaw://status" => ToolStatus(),
-            _ => "未知资源"
-        };
+            content = _dailyBriefingService.GenerateBriefingAsync().GetAwaiter().GetResult();
+        }
+        else
+        {
+            content = uri switch
+            {
+                "myclaw://context" => ToolRead(new Dictionary<string, object>()),
+                "myclaw://skills" => string.Join("\n", _skillManager.LoadedSkills.Select(s => $"- {s.Name}: {s.Description}")),
+                "myclaw://status" => ToolStatus(),
+                _ => "未知资源"
+            };
+        }
 
         return new
         {
@@ -770,7 +809,7 @@ public class McpServer
             },
             "myclaw_briefing" => new[]
             {
-                new { role = "user", content = new { type = "text", text = $"每日简报:\n{ToolStatus()}" } }
+                new { role = "user", content = new { type = "text", text = "请调用工具 myclaw_briefing 获取完整每日简报（工具使用、记忆与实体、待办提醒、今日建议）。" } }
             },
             _ => Array.Empty<object>()
         };

@@ -1,7 +1,7 @@
 using MyClaw.Core.Analytics;
 using MyClaw.Core.Briefing;
 using MyClaw.Core.Entities;
-using MyClaw.Memory;
+using MyClaw.Core.Memory;
 
 namespace MyClaw.Core.Tests.Briefing;
 
@@ -76,8 +76,8 @@ public class DailyBriefingServiceTests : IDisposable
 
         var briefing = await _service.GenerateBriefingAsync();
 
-        Assert.Contains("Usage Stats", briefing);
-        Assert.Contains("Boot count", briefing);
+        Assert.Contains("工具使用", briefing);
+        Assert.Contains("启动次数", briefing);
         Assert.Contains("git_status", briefing);
     }
 
@@ -93,7 +93,7 @@ public class DailyBriefingServiceTests : IDisposable
 
         var briefing = await _service.GenerateBriefingAsync();
 
-        Assert.Contains("Top Entities", briefing);
+        Assert.Contains("新增记忆", briefing);
         Assert.Contains("React", briefing);
     }
 

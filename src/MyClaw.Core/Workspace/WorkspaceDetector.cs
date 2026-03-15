@@ -26,14 +26,16 @@ public class WorkspaceDetector
             DetectedAt = DateTime.Now
         };
 
-        // 并行检测 Git 和技术栈
+        // 并行检测：项目类型、Git、技术栈
         var gitTask = DetectGitAsync();
         var techTask = Task.Run(() => TechStackDetector.Detect(_workspacePath));
+        var projectTypeTask = Task.Run(() => ProjectTypeDetector.Detect(_workspacePath));
         
-        await Task.WhenAll(gitTask, techTask);
+        await Task.WhenAll(gitTask, techTask, projectTypeTask);
 
         info.Git = await gitTask;
         info.TechStack = await techTask;
+        info.DetectedProjectType = await projectTypeTask;
 
         return info;
     }
@@ -48,6 +50,7 @@ public class WorkspaceDetector
             Name = Path.GetFileName(_workspacePath),
             Path = _workspacePath,
             TechStack = TechStackDetector.Detect(_workspacePath),
+            DetectedProjectType = ProjectTypeDetector.Detect(_workspacePath),
             DetectedAt = DateTime.Now
         };
     }

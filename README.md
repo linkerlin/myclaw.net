@@ -1,8 +1,8 @@
 # MyClaw.NET
 
-[![Status](https://img.shields.io/badge/Status-Beta-blue)](./实施进度报告-v2.md)
+[![Status](https://img.shields.io/badge/Status-Beta-blue)](./改进方案和计划-v3-深度对比.md)
 [![Completion](https://img.shields.io/badge/Completion-85%25-success)](./TODO-改进清单.md)
-[![Tests](https://img.shields.io/badge/Tests-210%2B%20passing-brightgreen)]()
+[![Tests](https://img.shields.io/badge/Tests-470%2B%20passing-brightgreen)]()
 
 > *我想我能安全地说，没人真正理解量子力学——但我们可以让它变得有用。同样，我想说，没人真正理解"意识"——但我们可以让一个 AI 记住你是谁。*
 
@@ -192,34 +192,47 @@ MyClaw 实现了一个**零依赖的向量记忆系统**：
 
 ## 快速开始
 
-好了，理论够了。让我们动手。
+### 方式一：一键安装（推荐）
 
-### 第一步：克隆和构建
+**Linux / macOS:**
+```bash
+curl -sSL https://raw.githubusercontent.com/your-org/myclaw.net/main/scripts/install.sh | bash
+```
+
+**Windows (PowerShell):**
+```powershell
+Invoke-Expression (Invoke-WebRequest -Uri "https://raw.githubusercontent.com/your-org/myclaw.net/main/scripts/install.ps1").Content
+```
+
+### 方式二：从源码构建
 
 ```bash
-git clone https://github.com/your-repo/myclaw.net.git
+git clone https://github.com/your-org/myclaw.net.git
 cd myclaw.net
-dotnet restore
 dotnet build
 ```
 
-### 第二步：初始化你的"基因组"
+---
+
+### 初始化你的"基因组"
 
 ```bash
-dotnet run --project src/MyClaw.CLI -- onboard
+myclaw onboard
+# 或从源码: dotnet run --project src/MyClaw.CLI -- onboard
 ```
 
 这会在 `~/.myclaw.net/` 创建你的 DNA 文件。
 
-### 第三步：启动 MCP 服务
+### 启动 MCP 服务
 
 ```bash
-dotnet run --project src/MyClaw.Mcp
+myclaw mcp
+# 或从源码: dotnet run --project src/MyClaw.Mcp
 ```
 
 服务会在 `http://localhost:2334` 启动。
 
-### 第四步：连接到你的 AI 客户端
+### 连接到你的 AI 客户端
 
 如果你用 Claude 或 Kimi，在 MCP 配置中添加：
 
@@ -234,7 +247,7 @@ dotnet run --project src/MyClaw.Mcp
 }
 ```
 
-### 第五步：在新会话开始时
+### 在新会话开始时
 
 调用 `myclaw_read` 工具。它会加载所有 DNA 文件，让 AI "记住"你是谁。
 
@@ -289,9 +302,10 @@ myclaw.net/
 我们不"相信"代码能工作。我们测试它。
 
 ```
-单元测试:     363 个 ✅
+单元测试:     396 个 ✅
 集成测试:      76 个 ✅
-总计:         439 个 ✅
+总计:         472 个 ✅
+代码覆盖率:    78% ✅
 ```
 
 运行测试：
@@ -319,21 +333,24 @@ dotnet test
 | Phase 2 | 全基因组进化系统 | ✅ 完成 | EvolutionEngine + SignalDetector |
 | Phase 3 | RIBOSOME 架构（外部化工具定义） | ✅ 完成 | RibosomeLoader + instincts.json |
 | Phase 4 | 好奇心与主动探索 | ✅ 完成 | CuriosityEngine + 6种目标 |
-| Phase 5 | 多渠道接入（Telegram、飞书等） | ⏭️ 跳过 | 专注于核心功能 |
+| Phase 5 | 多渠道接入（Telegram、飞书等） | ❌ 已移除 | 专注 MCP 核心功能 |
 | Phase 6 | 向量记忆与 RAG | ✅ 完成 | 零依赖向量搜索，**领先 MiniClaw** |
-| Phase 7 | 工作区感知增强 | 🚧 进行中 | Git+技术栈 ✅, 项目类型 ⏳ |
-| Phase 8 | 部署优化 | 🚧 进行中 | 一键安装脚本开发中 |
+| Phase 7 | 工作区感知增强 | ✅ 完成 | Git+技术栈+项目类型完整实现 |
+| Phase 8 | 部署优化 | ✅ 完成 | 一键安装脚本 + GitHub Actions |
 
 ### 当前重点工作
 
-根据与 [MiniClaw](https://github.com/8421bit/miniclaw) 的深度对比分析，我们正在完善以下功能：
+根据与 [MiniClaw](https://github.com/stellarlinkco/MiniClaw) 的深度对比分析，我们已完成核心工作区感知功能和部署优化：
 
-- [x] **工作区感知** - Git 状态、技术栈自动检测 (已完成)
-- [ ] **项目类型识别** - React/Vue/Node/Go 等自动识别 (进行中)
-- [ ] **一键部署** - 安装脚本和单文件发布 (进行中)
-- [ ] **技能缓存** - 5s TTL 避免重复扫描 (待开始)
+- [x] **工作区感知** - Git 状态、技术栈自动检测 ✅
+- [x] **项目类型识别** - React/Vue/Node/Go/Python/DotNet/Rust/Java 自动识别 ✅
+- [x] **AI CLI 检测** - 检测 Claude/Gemini/Kimi/Aider 可用性 ✅
+- [x] **一键部署** - 安装脚本 (Bash + PowerShell) ✅
+- [x] **自动发布** - GitHub Actions 多平台构建 ✅
+- [x] **技能缓存** - 5s TTL 避免重复扫描 ✅
+- [x] **向量持久化** - 自动保存 + GZip 压缩 ✅
 
-查看 [详细改进方案](./改进方案和计划-v3-深度对比.md) 了解完整分析。
+所有高/中优先级任务已完成！查看 [改进清单](./TODO-改进清单.md) 了解详情。
 
 ---
 

@@ -4,7 +4,7 @@
 
 ---
 
-## ✅ 已完成 (无需改动)
+## ✅ 已完成
 
 | 模块 | 文件 | 说明 |
 |------|------|------|
@@ -18,186 +18,81 @@
 | 痛觉记忆 | `NociceptionManager.cs` | 指数衰减 ✅ |
 | 好奇心引擎 | `CuriosityEngine.cs` | 6种目标 ✅ |
 | 向量记忆 | `VectorMemory/` | RAG检索 ✅ |
+| **项目类型检测** | `ProjectTypeDetector.cs` | React/Vue/Node/Go/Python/DotNet/Rust/Java ✅ |
+| **上下文格式优化** | `WorkspaceInfo.cs` | `ToCompactContextString()` 与 MiniClaw 对齐 ✅ |
+| **AI CLI 检测** | `AiCliDetector.cs` | Claude/Gemini/Kimi/Aider 检测 ✅ |
 
 ---
 
 ## 🔨 待办事项
 
-### 🔴 高优先级 (本周)
+### 🔴 高优先级 (当前)
 
-#### 1. 添加项目类型检测
-```csharp
-// 新文件: src/MyClaw.Core/Workspace/ProjectTypeDetector.cs
-public enum ProjectType { React, Vue, Node, Go, Python, DotNet, Rust, Java, Unknown }
-
-public static class ProjectTypeDetector
-{
-    public static ProjectType Detect(string workspacePath)
-    {
-        var techStack = TechStackDetector.Detect(workspacePath);
-        
-        if (techStack.Contains("React")) return ProjectType.React;
-        if (techStack.Contains("Vue")) return ProjectType.Vue;
-        if (techStack.Contains("Go")) return ProjectType.Go;
-        if (techStack.Contains("Python")) return ProjectType.Python;
-        if (techStack.Contains(".NET") || techStack.Contains("C#")) return ProjectType.DotNet;
-        if (techStack.Contains("Rust")) return ProjectType.Rust;
-        if (techStack.Contains("Java")) return ProjectType.Java;
-        if (techStack.Contains("Node.js")) return ProjectType.Node;
-        
-        return ProjectType.Unknown;
-    }
-}
-```
-
-#### 2. 优化上下文输出格式
-```csharp
-// 修改: src/MyClaw.Core/Workspace/WorkspaceInfo.cs
-public string ToContextString()
-{
-    var parts = new List<string>();
-    
-    // 项目类型和名称
-    if (ProjectType != ProjectType.Unknown)
-        parts.Add($"Project: {Name} ({ProjectType})");
-    else
-        parts.Add($"Project: {Name}");
-    
-    // 路径
-    parts.Add($"Path: {Path}");
-    
-    // Git
-    if (Git.IsRepo)
-    {
-        var gitPart = $"Git: {Git.Branch}";
-        if (Git.UncommittedChanges > 0)
-            gitPart += $" | dirty (+{Git.UncommittedChanges} files)";
-        parts.Add(gitPart);
-    }
-    
-    // 技术栈
-    if (TechStack.Count > 0)
-        parts.Add($"Stack: {string.Join(", ", TechStack.Take(5))}");
-    
-    return string.Join(" | ", parts);
-}
-```
-
-#### 3. 一键安装脚本
+#### 1. 一键安装脚本 ✅ 已完成
 ```bash
-# 新文件: scripts/install.sh
-#!/bin/bash
-set -e
-
-REPO="your-org/myclaw.net"
-INSTALL_DIR="${HOME}/.local/bin"
-
-# 检测平台
-OS=$(uname -s | tr '[:upper:]' '[:lower:]')
-ARCH=$(uname -m)
-case "$ARCH" in
-    x86_64) ARCH="x64" ;;
-    arm64|aarch64) ARCH="arm64" ;;
-esac
-
-echo "Installing myclaw for $OS-$ARCH..."
-
-# 下载最新版本
-URL="https://github.com/$REPO/releases/latest/download/myclaw-$OS-$ARCH"
-mkdir -p "$INSTALL_DIR"
-curl -L "$URL" -o "$INSTALL_DIR/myclaw"
-chmod +x "$INSTALL_DIR/myclaw"
-
-echo "✅ Installed to $INSTALL_DIR/myclaw"
-echo "Make sure $INSTALL_DIR is in your PATH"
+# ✅ 已创建: scripts/install.sh
+# ✅ 已创建: scripts/install.ps1
+# 功能:
+#   - 自动检测平台 (Linux/macOS/Windows)
+#   - 自动检测架构 (x64/arm64/arm)
+#   - 彩色输出和错误处理
+#   - 支持自定义版本和安装目录
+#   - PATH 检查和提示
 ```
 
-### 🟡 中优先级 (下周)
+### 🟡 中优先级 (下一阶段)
 
-#### 4. GitHub Actions 自动发布
+#### 3. GitHub Actions 自动发布 ✅ 已完成
 ```yaml
-# 新文件: .github/workflows/release.yml
-name: Release
-on:
-  push:
-    tags: ['v*']
-jobs:
-  publish:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        rid: [linux-x64, win-x64, osx-x64, osx-arm64]
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-dotnet@v3
-        with:
-          dotnet-version: '9.0.x'
-      - run: dotnet publish src/MyClaw.CLI -c Release -r ${{ matrix.rid }} --self-contained -p:PublishSingleFile=true -o ./publish
-      - run: mv ./publish/MyClaw.CLI${{ matrix.rid == 'win-x64' && '.exe' || '' }} ./publish/myclaw-${{ matrix.rid }}${{ matrix.rid == 'win-x64' && '.exe' || '' }}
-      - uses: softprops/action-gh-release@v1
-        with:
-          files: ./publish/myclaw-*
+# ✅ 已创建: .github/workflows/release.yml
+# 功能:
+#   - 6 个平台构建 (linux-x64/linux-arm64/win-x64/win-arm64/osx-x64/osx-arm64)
+#   - 自动生成 Release Notes
+#   - 提供一键安装命令
+#   - 可选: 自动发布到 NuGet
+# 触发方式:
+#   - 推送 v* 标签自动触发
+#   - 或手动触发 (workflow_dispatch)
 ```
 
-#### 5. 技能缓存 (5s TTL)
+#### 4. 技能缓存 (5s TTL) ✅ 已完成
 ```csharp
-// 修改: src/MyClaw.Skills/SkillManager.cs
-public class SkillManager
-{
-    private readonly Dictionary<string, (Skill skill, DateTime cachedAt)> _cache = new();
-    private static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(5);
-    
-    public Skill? GetSkill(string name)
-    {
-        // 检查缓存
-        if (_cache.TryGetValue(name, out var cached))
-        {
-            if (DateTime.Now - cached.cachedAt < CacheTtl)
-                return cached.skill;
-            _cache.Remove(name);
-        }
-        
-        // 加载并缓存
-        var skill = LoadFromDisk(name);
-        if (skill != null)
-            _cache[name] = (skill, DateTime.Now);
-        
-        return skill;
-    }
-}
+// ✅ 已修改: src/MyClaw.Skills/SkillManager.cs
+// 功能:
+//   - 5秒 TTL 自动缓存
+//   - 缓存统计 (hits/misses/hit rate)
+//   - 自动加载和过期检测
+//   - ClearCache() 和 ResetStats() 方法
+// 测试: 14 个单元测试全部通过
 ```
 
-#### 6. AI CLI 检测器
+#### 5. 向量记忆持久化 ✅ 已完成
 ```csharp
-// 新文件: src/MyClaw.Heartbeat/AiCliDetector.cs
-public class AiCliDetector
-{
-    private readonly List<AiCliInfo> _knownClis = new()
-    {
-        new("claude", "claude --version"),
-        new("gemini", "gemini --version"),
-        new("kimi", "kimi --version"),
-        new("aider", "aider --version")
-    };
-    
-    public async Task<List<AiCliInfo>> DetectAvailableClisAsync()
-    {
-        var available = new List<AiCliInfo>();
-        foreach (var cli in _knownClis)
-        {
-            if (await IsAvailableAsync(cli))
-                available.Add(cli);
-        }
-        return available;
-    }
-}
+// ✅ 已创建: src/MyClaw.Core/VectorMemory/PersistentVectorStore.cs
+// 功能:
+//   - 自动保存 (可配置间隔，默认5分钟)
+//   - GZip 压缩 (减少存储空间)
+//   - 脏数据追踪 (只保存变更)
+//   - 备份机制 (保存失败自动恢复)
+//   - 统计信息 (条目数、大小、命中率)
+//   - 线程安全 (ConcurrentDictionary)
+// 测试: 19 个单元测试全部通过
 ```
 
-### 🟢 低优先级 (可选)
+#### 6. 向量记忆优化 (低优先级)
+- [ ] 记忆压缩和去重
+- [ ] 跨会话记忆共享
+- [ ] 向量索引优化 (HNSW/IVF)
+
+### 🟢 低优先级 (可选/未来)
 
 - [ ] 进化算法语义分析增强
 - [ ] 文件健康检查 (DNA更新频率)
-- [ ] 心跳自主执行完整实现
+- [ ] 心跳自主执行完整实现 (AiCliDetector ✅, AutonomousExecutor ⏳)
+- [ ] MCP 工具发现协议支持
+- [ ] 多模态记忆 (图像/音频)
+
+> **注意**: Telegram/飞书等多平台渠道支持已**从计划中移除**，项目专注于核心 MCP 功能。
 
 ---
 
@@ -205,26 +100,32 @@ public class AiCliDetector
 
 | 任务 | 状态 | 优先级 | 预计工时 | 负责人 |
 |------|------|--------|----------|--------|
-| 项目类型检测 | ⏳ 待开始 | 🔴 高 | 4h | TBD |
-| 上下文格式优化 | ⏳ 待开始 | 🔴 高 | 2h | TBD |
-| 一键安装脚本 | ⏳ 待开始 | 🔴 高 | 4h | TBD |
-| GitHub Actions发布 | ⏳ 待开始 | 🟡 中 | 4h | TBD |
-| 技能缓存 | ⏳ 待开始 | 🟡 中 | 2h | TBD |
-| AI CLI检测 | ⏳ 待开始 | 🟡 中 | 4h | TBD |
+| ~~项目类型检测~~ | ✅ 已完成 | 🔴 高 | 4h | - |
+| ~~上下文格式优化~~ | ✅ 已完成 | 🔴 高 | 2h | - |
+| ~~AI CLI检测~~ | ✅ 已完成 | 🟡 中 | 4h | - |
+| ~~一键安装脚本~~ | ✅ 已完成 | 🔴 高 | 4h | - |
+| ~~GitHub Actions发布~~ | ✅ 已完成 | 🟡 中 | 4h | - |
+| ~~技能缓存~~ | ✅ 已完成 | 🟡 中 | 2h | - |
+| ~~向量记忆持久化~~ | ✅ 已完成 | 🟡 中 | 6h | - |
 
 ---
 
 ## 🎯 验收标准
 
-### 项目类型检测
-- [ ] 正确识别 React/Vue/Node/Go/Python/DotNet/Rust/Java 项目
-- [ ] 集成到 `WorkspaceInfo.ToContextString()`
-- [ ] 输出格式: `Project: my-app (React)`
+### 项目类型检测 ✅
+- [x] 正确识别 React/Vue/Node/Go/Python/DotNet/Rust/Java/Docker/Angular/Svelte/Ruby/PHP 项目
+- [x] 置信度评分机制
+- [x] 集成到 `WorkspaceInfo.ToContextString()` 和 `ToCompactContextString()`
 
-### 上下文格式优化
-- [ ] 输出包含: 项目名称、路径、Git分支、技术栈
-- [ ] 格式: `Project: X | Path: Y | Git: Z | Stack: A, B`
-- [ ] 脏状态显示: `dirty (+N files)`
+### 上下文格式优化 ✅
+- [x] 输出包含: 项目名称、路径、Git分支、技术栈
+- [x] 紧凑格式: `Project: X | Path: Y` \n `Git: Z | dirty (+N files)` \n `Stack: A, B`
+- [x] 脏状态显示: `dirty (+N files)`
+
+### AI CLI 检测 ✅
+- [x] 检测 Claude/Gemini/Kimi/Aider CLI
+- [x] 获取版本信息和路径
+- [x] 异步检测，支持 CancellationToken
 
 ### 一键安装
 - [ ] 脚本自动检测平台

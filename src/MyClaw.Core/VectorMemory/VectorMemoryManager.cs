@@ -12,17 +12,45 @@ public class VectorMemoryManager
     private readonly RagRetriever _retriever;
     private readonly string _workspace;
     private readonly string _vectorStorePath;
+    private readonly bool _usePersistentStore;
 
     public IVectorStore VectorStore => _retriever.VectorStore;
     public IEmbeddingService EmbeddingService => _retriever.EmbeddingService;
     public RagRetriever Retriever => _retriever;
 
-    public VectorMemoryManager(string workspace, int dimension = 384)
+    /// <summary>
+    /// 是否使用持久化存储
+    /// </summary>
+    public bool UsePersistentStore => _usePersistentStore;
+
+    /// <summary>
+    /// 获取持久化存储统计（如果是持久化存储）
+    /// </summary>
+    public PersistentStoreStats? PersistentStats =>
+        (_retriever.VectorStore as PersistentVectorStore)?.Stats;
+
+    public VectorMemoryManager(string workspace, int dimension = 384, bool persistent = true)
     {
         _workspace = workspace;
-        _vectorStorePath = Path.Combine(workspace, "memory", "vectors.json");
+        _vectorStorePath = Path.Combine(workspace, "memory", "vectors.bin");
+        _usePersistentStore = persistent;
 
-        var vectorStore = new InMemoryVectorStore(dimension);
+        IVectorStore vectorStore;
+        if (persistent)
+        {
+            // 使用持久化存储（自动保存间隔5分钟）
+            vectorStore = new PersistentVectorStore(
+                _vectorStorePath,
+                dimension,
+                autoSaveInterval: TimeSpan.FromMinutes(5),
+                compress: true);
+        }
+        else
+        {
+            // 使用内存存储（向后兼容）
+            vectorStore = new InMemoryVectorStore(dimension);
+        }
+
         var embeddingService = new SimpleEmbeddingService(dimension);
         _retriever = new RagRetriever(vectorStore, embeddingService);
     }
@@ -32,7 +60,16 @@ public class VectorMemoryManager
     /// </summary>
     public async Task InitializeAsync()
     {
-        await _retriever.VectorStore.LoadAsync(_vectorStorePath);
+        if (_usePersistentStore)
+        {
+            await _retriever.VectorStore.LoadAsync(_vectorStorePath);
+        }
+        else
+        {
+            // 内存存储使用旧路径
+            var oldPath = Path.Combine(_workspace, "memory", "vectors.json");
+            await _retriever.VectorStore.LoadAsync(oldPath);
+        }
     }
 
     /// <summary>
@@ -40,7 +77,15 @@ public class VectorMemoryManager
     /// </summary>
     public async Task SaveAsync()
     {
-        await _retriever.VectorStore.SaveAsync(_vectorStorePath);
+        if (_usePersistentStore)
+        {
+            await _retriever.VectorStore.SaveAsync(_vectorStorePath);
+        }
+        else
+        {
+            var oldPath = Path.Combine(_workspace, "memory", "vectors.json");
+            await _retriever.VectorStore.SaveAsync(oldPath);
+        }
     }
 
     /// <summary>

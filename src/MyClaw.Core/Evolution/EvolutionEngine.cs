@@ -27,17 +27,24 @@ public class EvolutionEngine
     /// </summary>
     public const double CooldownHours = 24;
 
+    /// <summary>
+    /// 分析模式时使用的记忆天数（与 v3 方案对齐：扩展至 30 天）
+    /// </summary>
+    public const int MemoryDaysForAnalysis = 30;
+
     private readonly string _myclawDir;
     private readonly string _stateFile;
     private readonly string _patternsFile;
     private readonly MethylationManager? _methylationManager;
+    private readonly EvolutionHistory? _evolutionHistory;
 
-    public EvolutionEngine(string myclawDir, MethylationManager? methylationManager = null)
+    public EvolutionEngine(string myclawDir, MethylationManager? methylationManager = null, EvolutionHistory? evolutionHistory = null)
     {
         _myclawDir = myclawDir;
         _stateFile = Path.Combine(myclawDir, "observer-state.json");
         _patternsFile = Path.Combine(myclawDir, "observer-patterns.json");
         _methylationManager = methylationManager;
+        _evolutionHistory = evolutionHistory ?? new EvolutionHistory(myclawDir);
     }
 
     /// <summary>
@@ -52,10 +59,11 @@ public class EvolutionEngine
         if (!Directory.Exists(memoryDir))
             return patterns;
 
+        // 按日期取最近 MemoryDaysForAnalysis 天的记忆文件（与 v3 方案对齐）
+        var cutoff = DateTime.UtcNow.Date.AddDays(-MemoryDaysForAnalysis);
         var mdFiles = Directory.GetFiles(memoryDir, "*.md")
-            .Where(f => !f.Contains("archived"))
+            .Where(f => !f.Contains("archived") && TryParseDateFromFileName(f, out var d) && d >= cutoff)
             .OrderBy(f => f)
-            .TakeLast(7)
             .ToList();
 
         if (mdFiles.Count == 0)
@@ -156,6 +164,9 @@ public class EvolutionEngine
             });
         }
 
+        // 相似模式合并（同类型且描述相近的合并，与 v3 方案对齐）
+        patterns = MergeSimilarPatternsGlobal(patterns);
+
         // 保存模式
         try
         {
@@ -170,6 +181,51 @@ public class EvolutionEngine
         catch { /* 忽略保存错误 */ }
 
         return patterns;
+    }
+
+    private static bool TryParseDateFromFileName(string filePath, out DateTime date)
+    {
+        date = default;
+        var name = Path.GetFileNameWithoutExtension(filePath);
+        return name.Length >= 10 && DateTime.TryParse(name.Substring(0, 10), out date);
+    }
+
+    /// <summary>
+    /// 跨类型列表的相似模式合并（同类型 + 描述关键词重叠则合并）
+    /// </summary>
+    private static List<DetectedPattern> MergeSimilarPatternsGlobal(List<DetectedPattern> patterns)
+    {
+        if (patterns.Count <= 1) return patterns;
+        var result = new List<DetectedPattern>();
+        var used = new HashSet<int>();
+        for (var i = 0; i < patterns.Count; i++)
+        {
+            if (used.Contains(i)) continue;
+            var p = patterns[i];
+            var group = new List<DetectedPattern> { p };
+            for (var j = i + 1; j < patterns.Count; j++)
+            {
+                if (used.Contains(j)) continue;
+                var q = patterns[j];
+                if (p.Type != q.Type) continue;
+                if (DescriptionSimilarity(p.Description, q.Description) < 0.4) continue;
+                group.Add(q);
+                used.Add(j);
+            }
+            used.Add(i);
+            result.Add(MergeSimilarPatternsInstance(group));
+        }
+        return result;
+    }
+
+    private static double DescriptionSimilarity(string a, string b)
+    {
+        if (string.IsNullOrEmpty(a) || string.IsNullOrEmpty(b)) return 0;
+        var ta = new HashSet<string>(Regex.Split(a.ToLowerInvariant(), @"\W+").Where(s => s.Length > 1));
+        var tb = new HashSet<string>(Regex.Split(b.ToLowerInvariant(), @"\W+").Where(s => s.Length > 1));
+        if (ta.Count == 0) return 0;
+        var intersect = ta.Intersect(tb).Count();
+        return (double)intersect / Math.Max(ta.Count, tb.Count);
     }
 
     /// <summary>
@@ -231,7 +287,7 @@ public class EvolutionEngine
 
         foreach (var (type, typePatterns) in patternsByType)
         {
-            var merged = MergeSimilarPatterns(typePatterns);
+            var merged = MergeSimilarPatternsInstance(typePatterns);
 
             // 检查是否应该甲基化
             if (_methylationManager != null)
@@ -297,6 +353,10 @@ public class EvolutionEngine
 
         // 记录进化日志
         await LogEvolutionAsync(state.TotalEvolutions, appliedMutations.Count, strongPatterns);
+
+        // 写入进化历史（与 v3 方案对齐）
+        if (_evolutionHistory != null)
+            await _evolutionHistory.RecordAsync(state.TotalEvolutions, appliedMutations.Count, strongPatterns);
 
         return new EvolutionResult
         {
@@ -466,7 +526,7 @@ public class EvolutionEngine
         catch { /* 忽略错误 */ }
     }
 
-    private DetectedPattern MergeSimilarPatterns(List<DetectedPattern> patterns)
+    private static DetectedPattern MergeSimilarPatternsInstance(List<DetectedPattern> patterns)
     {
         if (patterns.Count == 1)
             return patterns[0];

@@ -18,17 +18,39 @@ public class WorkspaceContextService
     }
 
     /// <summary>
+    /// 是否使用紧凑工作区上下文（与 MiniClaw 一致：Project | Path | Git | Stack 单块）
+    /// </summary>
+    public bool UseCompactWorkspaceContext { get; set; } = true;
+
+    /// <summary>
     /// 获取工作区上下文段落
     /// </summary>
     public async Task<ContextSection> GetContextSectionAsync()
     {
         var info = await GetWorkspaceInfoAsync();
+        var content = UseCompactWorkspaceContext
+            ? "## 👁️ Workspace\n" + info.ToCompactContextString() + "\n"
+            : info.ToContextString();
 
         return new ContextSection
         {
             Name = "workspace",
-            Content = info.ToContextString(),
-            Priority = 6 // 中等优先级，在 Memory 之后，Tools 之前
+            Content = content,
+            Priority = 6
+        };
+    }
+
+    /// <summary>
+    /// 获取紧凑格式工作区段落（仅 Project | Path | Git | Stack，与 MiniClaw 一致）
+    /// </summary>
+    public async Task<ContextSection> GetCompactContextSectionAsync()
+    {
+        var info = await GetWorkspaceInfoAsync();
+        return new ContextSection
+        {
+            Name = "workspace",
+            Content = "## 👁️ Workspace\n" + info.ToCompactContextString() + "\n",
+            Priority = 6
         };
     }
 
@@ -38,11 +60,14 @@ public class WorkspaceContextService
     public ContextSection GetQuickContextSection()
     {
         var info = _detector.DetectQuick();
+        var content = UseCompactWorkspaceContext
+            ? "## 👁️ Workspace\n" + info.ToCompactContextString() + "\n"
+            : info.ToContextString();
 
         return new ContextSection
         {
             Name = "workspace",
-            Content = info.ToContextString(),
+            Content = content,
             Priority = 6
         };
     }

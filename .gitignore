@@ -77,3 +77,4 @@ workspace/*.db-*
 # Build artifacts
 dist/
 publish/
+tests/

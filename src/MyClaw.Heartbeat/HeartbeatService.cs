@@ -1,23 +1,29 @@
 namespace MyClaw.Heartbeat;
 
 /// <summary>
-/// 心跳服务 - 周期性执行任务
+/// 心跳服务 - 周期性执行任务。优先通过 AI CLI 自主执行，无 CLI 时使用 OnHeartbeat 回调。
 /// </summary>
 public class HeartbeatService
 {
     private readonly string _workspace;
     private readonly TimeSpan _interval;
+    private readonly HeartbeatTaskRunner _runner;
     private CancellationTokenSource? _cts;
 
     /// <summary>
-    /// 心跳回调
+    /// 心跳回调（无可用 AI CLI 或自主执行失败时使用，如 Gateway 的 Agent）
     /// </summary>
-    public Func<string, Task<string>>? OnHeartbeat { get; set; }
+    public Func<string, Task<string>>? OnHeartbeat
+    {
+        get => _runner.OnHeartbeat;
+        set => _runner.OnHeartbeat = value;
+    }
 
     public HeartbeatService(string workspace, TimeSpan? interval = null)
     {
         _workspace = workspace;
         _interval = interval ?? TimeSpan.FromMinutes(30);
+        _runner = new HeartbeatTaskRunner();
     }
 
     /// <summary>
@@ -77,21 +83,14 @@ public class HeartbeatService
 
             Console.WriteLine($"[heartbeat] 触发心跳，提示词 ({content.Length} 字符)");
 
-            if (OnHeartbeat == null)
+            var result = await _runner.RunAsync(content);
+
+            if (string.IsNullOrEmpty(result))
             {
-                Console.WriteLine("[heartbeat] 未设置处理程序");
-                return;
+                if (_runner.OnHeartbeat == null)
+                    Console.WriteLine("[heartbeat] 未设置处理程序且无可用 AI CLI");
             }
-
-            var prompt = $@"Heartbeat prompt: Check the following items for updates or actions needed.
-
-{content}
-
-If nothing needs attention, reply exactly: HEARTBEAT_OK";
-
-            var result = await OnHeartbeat(prompt);
-
-            if (result.Contains("HEARTBEAT_OK"))
+            else if (result.Contains("HEARTBEAT_OK"))
             {
                 Console.WriteLine("[heartbeat] 无需执行");
             }

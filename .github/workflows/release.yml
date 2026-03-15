@@ -1,0 +1,190 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号 (例如: v1.0.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.rid }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: linux-x64
+            os: ubuntu-latest
+            ext: ""
+          - rid: linux-arm64
+            os: ubuntu-latest
+            ext: ""
+          - rid: win-x64
+            os: windows-latest
+            ext: ".exe"
+          - rid: win-arm64
+            os: windows-latest
+            ext: ".exe"
+          - rid: osx-x64
+            os: macos-latest
+            ext: ""
+          - rid: osx-arm64
+            os: macos-latest
+            ext: ""
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '9.0.x'
+
+    - name: Restore dependencies
+      run: dotnet restore
+
+    - name: Publish CLI
+      run: |
+        dotnet publish src/MyClaw.CLI/MyClaw.CLI.csproj `
+          -c Release `
+          -r ${{ matrix.rid }} `
+          --self-contained true `
+          -p:PublishSingleFile=true `
+          -p:PublishTrimmed=false `
+          -o ./publish
+      shell: pwsh
+
+    - name: Rename binary (Unix)
+      if: matrix.os != 'windows-latest'
+      run: |
+        mv ./publish/MyClaw.CLI${{ matrix.ext }} ./publish/myclaw-${{ matrix.rid }}${{ matrix.ext }}
+        chmod +x ./publish/myclaw-${{ matrix.rid }}${{ matrix.ext }}
+
+    - name: Rename binary (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        Move-Item -Path "./publish/MyClaw.CLI${{ matrix.ext }}" -Destination "./publish/myclaw-${{ matrix.rid }}${{ matrix.ext }}"
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: myclaw-${{ matrix.rid }}
+        path: ./publish/myclaw-${{ matrix.rid }}${{ matrix.ext }}
+        retention-days: 1
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: ./artifacts
+        pattern: myclaw-*
+
+    - name: Prepare release files
+      run: |
+        mkdir -p ./release
+        for dir in ./artifacts/myclaw-*/; do
+          cp "$dir"* ./release/
+        done
+        ls -la ./release/
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        name: MyClaw.NET ${{ github.ref_name }}
+        body: |
+          ## MyClaw.NET ${{ github.ref_name }}
+
+          ### 安装
+
+          **Linux/macOS:**
+          ```bash
+          curl -sSL https://raw.githubusercontent.com/${{ github.repository }}/main/scripts/install.sh | bash
+          ```
+
+          **Windows (PowerShell):**
+          ```powershell
+          Invoke-Expression (Invoke-WebRequest -Uri "https://raw.githubusercontent.com/${{ github.repository }}/main/scripts/install.ps1").Content
+          ```
+
+          ### 下载
+
+          | 平台 | 下载 |
+          |------|------|
+          | Linux x64 | [myclaw-linux-x64](myclaw-linux-x64) |
+          | Linux ARM64 | [myclaw-linux-arm64](myclaw-linux-arm64) |
+          | Windows x64 | [myclaw-win-x64.exe](myclaw-win-x64.exe) |
+          | Windows ARM64 | [myclaw-win-arm64.exe](myclaw-win-arm64.exe) |
+          | macOS x64 | [myclaw-osx-x64](myclaw-osx-x64) |
+          | macOS ARM64 | [myclaw-osx-arm64](myclaw-osx-arm64) |
+
+          ### 快速开始
+
+          ```bash
+          # 初始化配置
+          myclaw onboard
+
+          # 查看状态
+          myclaw status
+
+          # 启动 MCP 服务
+          myclaw mcp
+          ```
+
+          ### 更新日志
+
+          查看 [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) 了解详细变更。
+        files: ./release/*
+        draft: false
+        prerelease: ${{ contains(github.ref_name, '-') }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # 可选: 发布到 NuGet
+  nuget:
+    name: Publish to NuGet
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-')
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '9.0.x'
+
+    - name: Restore dependencies
+      run: dotnet restore
+
+    - name: Pack NuGet packages
+      run: |
+        dotnet pack src/MyClaw.Core/MyClaw.Core.csproj -c Release -o ./packages
+        dotnet pack src/MyClaw.Skills/MyClaw.Skills.csproj -c Release -o ./packages
+        dotnet pack src/MyClaw.Cron/MyClaw.Cron.csproj -c Release -o ./packages
+
+    - name: Push to NuGet
+      run: |
+        dotnet nuget push ./packages/*.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+      env:
+        NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+      continue-on-error: true
