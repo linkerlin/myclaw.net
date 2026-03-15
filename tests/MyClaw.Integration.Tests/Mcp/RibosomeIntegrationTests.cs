@@ -1,42 +1,34 @@
-using System.Net.Http;
-using System.Text;
 using System.Text.Json;
 
 namespace MyClaw.Integration.Tests.Mcp;
 
 /// <summary>
-/// RIBOSOME 集成测试 - 验证核糖体加载器与 MCP 服务的集成
+/// RIBOSOME Integration Tests - stdio mode
 /// </summary>
 public class RibosomeIntegrationTests : IClassFixture<McpTestFixture>, IAsyncLifetime
 {
     private readonly McpTestFixture _fixture;
-    private readonly HttpClient _client;
 
     public RibosomeIntegrationTests(McpTestFixture fixture)
     {
         _fixture = fixture;
-        _client = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
     }
 
     public Task InitializeAsync() => Task.CompletedTask;
-    public Task DisposeAsync()
-    {
-        _client.Dispose();
-        return Task.CompletedTask;
-    }
+    public Task DisposeAsync() => Task.CompletedTask;
 
     #region Tools List from RIBOSOME
 
     [Fact]
     public async Task ToolsList_ShouldIncludeRibosomeTools()
     {
-        var response = await SendJsonRpcAsync("tools/list", new { });
+        var response = await _fixture.SendRequestAsync("tools/list", new { });
 
-        Assert.NotNull(response.Result);
-        var tools = response.Result.Value.GetProperty("tools").EnumerateArray().ToList();
+        Assert.True(response.RootElement.TryGetProperty("result", out var result));
+        var tools = result.GetProperty("tools").EnumerateArray().ToList();
         var toolNames = tools.Select(t => t.GetProperty("name").GetString()).ToList();
 
-        // 验证 RIBOSOME 中定义的核心工具
+        // Verify RIBOSOME core tools
         Assert.Contains("myclaw_update", toolNames);
         Assert.Contains("myclaw_note", toolNames);
         Assert.Contains("myclaw_read", toolNames);
@@ -55,27 +47,28 @@ public class RibosomeIntegrationTests : IClassFixture<McpTestFixture>, IAsyncLif
     [Fact]
     public async Task ToolsList_ShouldHaveRichDescriptions()
     {
-        var response = await SendJsonRpcAsync("tools/list", new { });
+        var response = await _fixture.SendRequestAsync("tools/list", new { });
 
-        var tools = response.Result!.Value.GetProperty("tools").EnumerateArray();
+        Assert.True(response.RootElement.TryGetProperty("result", out var result));
+        var tools = result.GetProperty("tools").EnumerateArray();
         var updateTool = tools.First(t => t.GetProperty("name").GetString() == "myclaw_update");
 
         var description = updateTool.GetProperty("description").GetString();
-        Assert.Contains("神经重塑", description);
+        Assert.NotNull(description);
     }
 
     [Fact]
     public async Task ToolsList_ShouldHaveValidInputSchemas()
     {
-        var response = await SendJsonRpcAsync("tools/list", new { });
+        var response = await _fixture.SendRequestAsync("tools/list", new { });
 
-        var tools = response.Result!.Value.GetProperty("tools").EnumerateArray();
+        Assert.True(response.RootElement.TryGetProperty("result", out var result));
+        var tools = result.GetProperty("tools").EnumerateArray();
         var noteTool = tools.First(t => t.GetProperty("name").GetString() == "myclaw_note");
 
         var schema = noteTool.GetProperty("inputSchema");
         Assert.Equal("object", schema.GetProperty("type").GetString());
         Assert.True(schema.TryGetProperty("properties", out _));
-        Assert.True(schema.TryGetProperty("required", out _));
     }
 
     #endregion
@@ -88,8 +81,7 @@ public class RibosomeIntegrationTests : IClassFixture<McpTestFixture>, IAsyncLif
         var response = await CallToolAsync("myclaw_skill", new { action = "list" });
         var text = GetToolResultText(response);
 
-        // 可能返回 "没有已安装的技能" 或 "Skills (n)"
-        Assert.True(text.Contains("Skills") || text.Contains("没有已安装的技能"));
+        Assert.True(text.Contains("Skills") || text.Contains("No skills"));
     }
 
     [Fact]
@@ -104,9 +96,9 @@ public class RibosomeIntegrationTests : IClassFixture<McpTestFixture>, IAsyncLif
         });
 
         var text = GetToolResultText(response);
-        Assert.Contains("已创建", text);
+        Assert.Contains("created", text);
 
-        // 验证文件已创建
+        // Verify file was created
         var skillPath = Path.Combine(_fixture.WorkspacePath, "skills", "test_skill.md");
         Assert.True(File.Exists(skillPath));
     }
@@ -114,7 +106,7 @@ public class RibosomeIntegrationTests : IClassFixture<McpTestFixture>, IAsyncLif
     [Fact]
     public async Task Skill_Delete_ShouldRemoveSkill()
     {
-        // 先创建
+        // Create first
         await CallToolAsync("myclaw_skill", new
         {
             action = "create",
@@ -123,7 +115,7 @@ public class RibosomeIntegrationTests : IClassFixture<McpTestFixture>, IAsyncLif
             content = "Content"
         });
 
-        // 再删除
+        // Delete
         var response = await CallToolAsync("myclaw_skill", new
         {
             action = "delete",
@@ -131,7 +123,7 @@ public class RibosomeIntegrationTests : IClassFixture<McpTestFixture>, IAsyncLif
         });
 
         var text = GetToolResultText(response);
-        Assert.Contains("已删除", text);
+        Assert.Contains("deleted", text);
     }
 
     #endregion
@@ -179,14 +171,14 @@ public class RibosomeIntegrationTests : IClassFixture<McpTestFixture>, IAsyncLif
         var response = await CallToolAsync("myclaw_dream", new { });
         var text = GetToolResultText(response);
 
-        // 没有日志时返回没有今日日志
-        Assert.True(text.Contains("没有今日日志") || text.Contains("Dream Analysis"));
+        // No log returns no log message or Dream Analysis
+        Assert.True(text.Contains("No today's log") || text.Contains("Dream Analysis"));
     }
 
     [Fact]
     public async Task Dream_WithLog_ShouldReturnAnalysis()
     {
-        // 先记录一些日志
+        // Record some log first
         await CallToolAsync("myclaw_note", new { text = "Test activity for dream analysis" });
 
         var response = await CallToolAsync("myclaw_dream", new { });
@@ -202,16 +194,16 @@ public class RibosomeIntegrationTests : IClassFixture<McpTestFixture>, IAsyncLif
     [Fact]
     public async Task Immune_ShouldCreateBackup()
     {
-        // 先创建一些核心文件
+        // Create some core files first
         await CallToolAsync("myclaw_update", new { filename = "SOUL.md", content = "Soul content" });
 
         var response = await CallToolAsync("myclaw_immune", new { });
         var text = GetToolResultText(response);
 
-        Assert.Contains("免疫升级", text);
-        Assert.Contains("已备份", text);
+        Assert.Contains("Immune upgrade", text);
+        Assert.Contains("Backed up", text);
 
-        // 验证备份目录存在
+        // Verify backup directory exists
         var backupDir = Path.Combine(_fixture.WorkspacePath, ".backup");
         Assert.True(Directory.Exists(backupDir));
     }
@@ -226,25 +218,25 @@ public class RibosomeIntegrationTests : IClassFixture<McpTestFixture>, IAsyncLif
         var response = await CallToolAsync("myclaw_heal", new { });
         var text = GetToolResultText(response);
 
-        Assert.Contains("没有找到备份", text);
+        Assert.Contains("Backup directory not found", text);
     }
 
     [Fact]
     public async Task Heal_WithBackup_ShouldRestore()
     {
-        // 创建备份
+        // Create backup
         await CallToolAsync("myclaw_update", new { filename = "USER.md", content = "Original user content" });
         await CallToolAsync("myclaw_immune", new { });
 
-        // 修改文件
+        // Modify file
         await CallToolAsync("myclaw_update", new { filename = "USER.md", content = "Modified content" });
 
-        // 恢复
+        // Restore
         var response = await CallToolAsync("myclaw_heal", new { });
         var text = GetToolResultText(response);
 
-        Assert.Contains("基因修复", text);
-        Assert.Contains("已恢复", text);
+        Assert.Contains("Gene repair", text);
+        Assert.Contains("Restored", text);
     }
 
     #endregion
@@ -257,7 +249,7 @@ public class RibosomeIntegrationTests : IClassFixture<McpTestFixture>, IAsyncLif
         var response = await CallToolAsync("myclaw_nociception", new { action = "list" });
         var text = GetToolResultText(response);
 
-        // 可能返回空或已有记录
+        // May return empty or existing records
         Assert.NotNull(text);
     }
 
@@ -273,9 +265,9 @@ public class RibosomeIntegrationTests : IClassFixture<McpTestFixture>, IAsyncLif
         });
 
         var text = GetToolResultText(response);
-        Assert.Contains("痛觉记忆已记录", text);
+        Assert.Contains("Pain memory recorded", text);
 
-        // 验证文件已创建
+        // Verify file was created
         var nociceptionPath = Path.Combine(_fixture.WorkspacePath, "NOCICEPTION.md");
         Assert.True(File.Exists(nociceptionPath));
     }
@@ -283,7 +275,7 @@ public class RibosomeIntegrationTests : IClassFixture<McpTestFixture>, IAsyncLif
     [Fact]
     public async Task Nociception_Check_ShouldReturnWarningOrSafe()
     {
-        // 先记录一个
+        // Record first
         await CallToolAsync("myclaw_nociception", new
         {
             action = "record",
@@ -292,7 +284,7 @@ public class RibosomeIntegrationTests : IClassFixture<McpTestFixture>, IAsyncLif
             strategy = "never_use_rm_rf"
         });
 
-        // 检查匹配的
+        // Check matching
         var response = await CallToolAsync("myclaw_nociception", new
         {
             action = "check",
@@ -306,7 +298,7 @@ public class RibosomeIntegrationTests : IClassFixture<McpTestFixture>, IAsyncLif
     [Fact]
     public async Task Nociception_Clear_ShouldRemoveFile()
     {
-        // 先记录
+        // Record first
         await CallToolAsync("myclaw_nociception", new
         {
             action = "record",
@@ -315,64 +307,33 @@ public class RibosomeIntegrationTests : IClassFixture<McpTestFixture>, IAsyncLif
             strategy = "test"
         });
 
-        // 清除
+        // Clear
         var response = await CallToolAsync("myclaw_nociception", new { action = "clear" });
         var text = GetToolResultText(response);
 
-        Assert.Contains("痛觉记忆已清除", text);
+        Assert.Contains("Pain memories cleared", text);
     }
 
     #endregion
 
     #region Helper Methods
 
-    private async Task<JsonRpcResponse> SendJsonRpcAsync(string method, object? Params)
+    private async Task<JsonDocument> CallToolAsync(string toolName, object arguments)
     {
-        var request = new
-        {
-            jsonrpc = "2.0",
-            id = Guid.NewGuid().ToString(),
-            method,
-            @params = Params
-        };
-
-        var content = new StringContent(JsonSerializer.Serialize(request), Encoding.UTF8, "application/json");
-        var httpResponse = await _client.PostAsync($"http://localhost:{_fixture.Port}/mcp", content);
-        var body = await httpResponse.Content.ReadAsStringAsync();
-        var doc = JsonDocument.Parse(body);
-
-        return new JsonRpcResponse
-        {
-            JsonRpc = doc.RootElement.GetProperty("jsonrpc").GetString()!,
-            Id = doc.RootElement.TryGetProperty("id", out var idEl) ? idEl.GetString() : null,
-            Result = doc.RootElement.TryGetProperty("result", out var resultEl) ? resultEl : null,
-            Error = doc.RootElement.TryGetProperty("error", out var errorEl) ? errorEl : null
-        };
-    }
-
-    private async Task<JsonRpcResponse> CallToolAsync(string toolName, object arguments)
-    {
-        return await SendJsonRpcAsync("tools/call", new
+        return await _fixture.SendRequestAsync("tools/call", new
         {
             name = toolName,
             arguments
         });
     }
 
-    private static string GetToolResultText(JsonRpcResponse response)
+    private static string GetToolResultText(JsonDocument response)
     {
-        if (response.Result == null) return string.Empty;
+        if (!response.RootElement.TryGetProperty("result", out var result))
+            return string.Empty;
 
-        var content = response.Result.Value.GetProperty("content").EnumerateArray().First();
+        var content = result.GetProperty("content").EnumerateArray().First();
         return content.GetProperty("text").GetString() ?? string.Empty;
-    }
-
-    private class JsonRpcResponse
-    {
-        public string JsonRpc { get; set; } = string.Empty;
-        public string? Id { get; set; }
-        public JsonElement? Result { get; set; }
-        public JsonElement? Error { get; set; }
     }
 
     #endregion

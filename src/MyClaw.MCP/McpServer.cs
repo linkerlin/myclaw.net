@@ -1,7 +1,7 @@
 using System.Diagnostics;
-using System.Net;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using MyClaw.Core.Analytics;
 using MyClaw.Core.Briefing;
 using MyClaw.Core.Configuration;
@@ -16,14 +16,13 @@ using MyClaw.Skills;
 namespace MyClaw.MCP;
 
 /// <summary>
-/// MCP Server - Model Context Protocol over HTTP (Streamable HTTP)
+/// MCP Server - Model Context Protocol over stdio
 /// </summary>
-public class McpServer
+public class McpServer : IDisposable
 {
-    private readonly int _port;
     private readonly string? _workspacePath;
-    private HttpListener? _listener;
     private CancellationTokenSource? _cts;
+    private Task? _readLoopTask;
 
     private MemoryStore _memoryStore = null!;
     private EntityStore _entityStore = null!;
@@ -36,19 +35,23 @@ public class McpServer
     private DailyBriefingService _dailyBriefingService = null!;
     private string _workspace = null!;
 
-    public McpServer(int port, string? workspacePath = null)
+    // Protocol state
+    private bool _initialized = false;
+    private string _clientProtocolVersion = "2024-11-05";
+    private ClientCapabilities? _clientCapabilities;
+
+    public McpServer(string? workspacePath = null)
     {
-        _port = port;
         _workspacePath = workspacePath;
     }
 
-    public async Task StartAsync()
+    public async Task StartAsync(CancellationToken cancellationToken = default)
     {
-        _cts = new CancellationTokenSource();
+        _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        _workspace = !string.IsNullOrEmpty(_workspacePath) 
-            ? _workspacePath 
+        _workspace = !string.IsNullOrEmpty(_workspacePath)
+            ? _workspacePath
             : Path.Combine(home, ".myclaw.net");
         Directory.CreateDirectory(_workspace);
 
@@ -59,11 +62,9 @@ public class McpServer
         _commandExecutor = new CommandExecutor();
         _signalDetector = new SignalDetector();
 
-        // 初始化 RibosomeLoader - 从项目根目录的 templates 文件夹加载
         var templatesDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "templates");
         if (!Directory.Exists(templatesDir))
         {
-            // 尝试从当前工作目录的上级查找
             var cwd = Directory.GetCurrentDirectory();
             templatesDir = Path.Combine(cwd, "templates");
         }
@@ -76,11 +77,8 @@ public class McpServer
 
         await _entityStore.LoadAsync();
 
-        _listener = new HttpListener();
-        _listener.Prefixes.Add($"http://localhost:{_port}/");
-        _listener.Start();
-
-        _ = Task.Run(() => AcceptLoopAsync(_cts.Token));
+        // Start reading from stdin
+        _readLoopTask = Task.Run(() => ReadLoopAsync(_cts.Token), _cts.Token);
 
         await Task.CompletedTask;
     }
@@ -88,109 +86,94 @@ public class McpServer
     public async Task StopAsync()
     {
         _cts?.Cancel();
-        _listener?.Stop();
-        await Task.CompletedTask;
-    }
-
-    private async Task AcceptLoopAsync(CancellationToken ct)
-    {
-        while (!ct.IsCancellationRequested)
+        if (_readLoopTask != null)
         {
-            try
-            {
-                var context = await _listener!.GetContextAsync();
-                _ = Task.Run(() => HandleRequestAsync(context), ct);
-            }
-            catch (HttpListenerException) when (ct.IsCancellationRequested)
-            {
-                break;
-            }
-            catch (Exception ex)
-            {
-                Log.Error($"[MCP] Accept connection error: {ex.Message}");
-            }
+            try { await _readLoopTask.WaitAsync(TimeSpan.FromSeconds(5)); } catch { }
         }
     }
 
-    private async Task HandleRequestAsync(HttpListenerContext context)
+    private async Task ReadLoopAsync(CancellationToken ct)
     {
-        var request = context.Request;
-        var response = context.Response;
-
-        response.Headers.Add("Access-Control-Allow-Origin", "*");
-        response.Headers.Add("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-        response.Headers.Add("Access-Control-Allow-Headers", "Content-Type, Mcp-Session-Id");
-
-        if (request.HttpMethod == "OPTIONS")
-        {
-            response.StatusCode = 200;
-            response.Close();
-            return;
-        }
-
-        var path = request.Url?.AbsolutePath ?? "/";
-
         try
         {
-            if (path == "/mcp" && request.HttpMethod == "POST")
+            while (!ct.IsCancellationRequested)
             {
-                await HandleJsonRpcAsync(request, response);
+                var line = await Console.In.ReadLineAsync(ct);
+                if (line == null) break;
+
+                if (string.IsNullOrWhiteSpace(line)) continue;
+
+                _ = Task.Run(() => HandleMessageAsync(line, ct), ct);
             }
-            else if (path == "/health")
-            {
-                await WriteJsonAsync(response, new { status = "ok" });
-            }
-            else
-            {
-                response.StatusCode = 404;
-                await WriteJsonAsync(response, new { error = "Not found" });
-            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Normal shutdown
         }
         catch (Exception ex)
         {
-            Log.Error($"[MCP] Error: {ex.Message}");
-            response.StatusCode = 500;
-            await WriteJsonAsync(response, new { error = ex.Message });
+            Log.Error($"[MCP] Read loop error: {ex.Message}");
         }
     }
 
-    private async Task HandleJsonRpcAsync(HttpListenerRequest request, HttpListenerResponse response)
+    private async Task HandleMessageAsync(string line, CancellationToken ct)
     {
-        var body = await ReadBodyAsync(request);
-        var jsonRpcRequest = JsonSerializer.Deserialize<JsonRpcRequest>(body, new JsonSerializerOptions
+        try
         {
-            PropertyNameCaseInsensitive = true
-        });
+            var message = JsonSerializer.Deserialize<JsonRpcRequest>(line, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
 
-        if (jsonRpcRequest == null || jsonRpcRequest.JsonRpc != "2.0")
-        {
-            await WriteJsonRpcErrorAsync(response, null, -32600, "Invalid Request");
-            return;
+            if (message == null)
+            {
+                await SendErrorAsync(null, -32700, "Parse error");
+                return;
+            }
+
+            if (message.JsonRpc != "2.0")
+            {
+                await SendErrorAsync(message.Id, -32600, "Invalid Request");
+                return;
+            }
+
+            await HandleRequestAsync(message, ct);
         }
+        catch (JsonException ex)
+        {
+            await SendErrorAsync(null, -32700, $"Parse error: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"[MCP] Handle message error: {ex.Message}");
+        }
+    }
 
+    private async Task HandleRequestAsync(JsonRpcRequest request, CancellationToken ct)
+    {
         object? result = null;
         JsonRpcError? error = null;
 
         try
         {
-            result = jsonRpcRequest.Method switch
+            result = request.Method switch
             {
-                "initialize" => HandleInitialize(jsonRpcRequest.Params),
-                "notifications/initialized" => null,
+                "initialize" => HandleInitialize(request.Params),
+                "notifications/initialized" => HandleInitialized(),
                 "tools/list" => HandleListTools(),
-                "tools/call" => await HandleCallToolAsync(jsonRpcRequest.Params),
+                "tools/call" => await HandleCallToolAsync(request.Params, ct),
                 "resources/list" => HandleListResources(),
-                "resources/read" => HandleReadResource(jsonRpcRequest.Params),
+                "resources/read" => HandleReadResource(request.Params),
                 "resources/templates/list" => HandleListResourceTemplates(),
                 "prompts/list" => HandleListPrompts(),
-                "prompts/get" => HandleGetPrompt(jsonRpcRequest.Params),
+                "prompts/get" => HandleGetPrompt(request.Params),
                 "ping" => new { },
                 _ => null
             };
 
-            if (result == null && jsonRpcRequest.Method != "notifications/initialized" && jsonRpcRequest.Method != "ping")
+            if (result == null && request.Method != "notifications/initialized" && request.Method != "ping")
             {
-                error = new JsonRpcError { Code = -32601, Message = $"Method not found: {jsonRpcRequest.Method}" };
+                error = new JsonRpcError { Code = -32601, Message = $"Method not found: {request.Method}" };
             }
         }
         catch (Exception ex)
@@ -198,25 +181,39 @@ public class McpServer
             error = new JsonRpcError { Code = -32603, Message = ex.Message };
         }
 
-        if (jsonRpcRequest.Id == null && jsonRpcRequest.Method == "notifications/initialized")
+        // Notifications (no id) don't send responses
+        if (request.Id == null && request.Method.StartsWith("notifications/"))
         {
-            response.StatusCode = 204;
-            response.Close();
             return;
         }
 
         if (error != null)
         {
-            await WriteJsonRpcErrorAsync(response, jsonRpcRequest.Id, error.Code, error.Message);
+            await SendErrorAsync(request.Id, error.Code, error.Message);
         }
         else
         {
-            await WriteJsonRpcResultAsync(response, jsonRpcRequest.Id, result);
+            await SendResultAsync(request.Id, result);
         }
     }
 
     private object HandleInitialize(JsonElement? Params)
     {
+        _initialized = true;
+
+        if (Params.HasValue)
+        {
+            var params_obj = Params.Value;
+            if (params_obj.TryGetProperty("protocolVersion", out var versionProp))
+            {
+                _clientProtocolVersion = versionProp.GetString() ?? "2024-11-05";
+            }
+            if (params_obj.TryGetProperty("capabilities", out var capsProp))
+            {
+                _clientCapabilities = JsonSerializer.Deserialize<ClientCapabilities>(capsProp.GetRawText());
+            }
+        }
+
         return new
         {
             protocolVersion = "2024-11-05",
@@ -224,17 +221,23 @@ public class McpServer
             {
                 tools = new { listChanged = false },
                 resources = new { listChanged = false, subscribe = false },
-                prompts = new { listChanged = false }
+                prompts = new { listChanged = false },
+                logging = new { }
             },
             serverInfo = new { name = "myclaw", version = "1.0.0" }
         };
+    }
+
+    private object? HandleInitialized()
+    {
+        Log.Info("[MCP] Client initialized");
+        return null; // Notification, no response
     }
 
     private object HandleListTools()
     {
         var tools = new List<object>();
 
-        // 从 RibosomeLoader 加载本能工具
         var mcpTools = _ribosomeLoader.GetMcpToolsAsync().GetAwaiter().GetResult();
         foreach (var tool in mcpTools)
         {
@@ -246,29 +249,27 @@ public class McpServer
             });
         }
 
-        // 添加技能工具
         foreach (var skill in _skillManager.LoadedSkills)
         {
             tools.Add(new
             {
                 name = $"skill_{skill.Name}",
-                description = $"【Skill: {skill.Name}】{skill.Description}",
-                inputSchema = new { type = "object", description = "技能输入" }
+                description = $"[Skill: {skill.Name}] {skill.Description}",
+                inputSchema = new { type = "object", description = "Skill input" }
             });
         }
 
-        // 服务端内置工具（与 v3 每日简报对齐）
         tools.Add(new
         {
             name = "myclaw_briefing",
-            description = "生成每日简报：工具使用、记忆与实体、待办提醒、今日建议等。",
-            inputSchema = new { type = "object", properties = new { }, description = "无需参数" }
+            description = "Generate daily briefing: tool usage, memories, entities, todo reminders, and suggestions.",
+            inputSchema = new { type = "object", properties = new { }, description = "No parameters required" }
         });
 
         return new { tools };
     }
 
-    private async Task<object> HandleCallToolAsync(JsonElement? Params)
+    private async Task<object> HandleCallToolAsync(JsonElement? Params, CancellationToken ct)
     {
         if (Params == null || !Params.Value.TryGetProperty("name", out var nameEl))
         {
@@ -284,15 +285,16 @@ public class McpServer
         }
 
         var sw = Stopwatch.StartNew();
-        var result = await ExecuteToolAsync(name, args);
+        var result = await ExecuteToolAsync(name, args, ct);
         sw.Stop();
-        var success = !result.StartsWith("错误") && !result.StartsWith("错误:");
+        var success = !result.StartsWith("Error") && !result.StartsWith("Error:");
         _analyticsService.TrackToolCall(name);
         _ = _toolUsageTracker.RecordToolCallAsync(name, success, (int)sw.ElapsedMilliseconds);
+
         return new { content = new[] { new { type = "text", text = result } } };
     }
 
-    private async Task<string> ExecuteToolAsync(string name, Dictionary<string, object>? args)
+    private async Task<string> ExecuteToolAsync(string name, Dictionary<string, object>? args, CancellationToken ct)
     {
         args ??= new Dictionary<string, object>();
 
@@ -314,20 +316,20 @@ public class McpServer
                 "myclaw_heal" => ToolHeal(),
                 "myclaw_nociception" => ToolNociception(args),
                 "myclaw_briefing" => await ToolBriefingAsync(),
-                _ => name.StartsWith("skill_") ? await ToolSkillAsync(name, args) : $"未知工具: {name}"
+                _ => name.StartsWith("skill_") ? await ToolSkillAsync(name, args) : $"Unknown tool: {name}"
             };
         }
         catch (Exception ex)
         {
-            return $"错误: {ex.Message}";
+            return $"Error: {ex.Message}";
         }
     }
 
+    // Tool implementations (same as before, with async overloads)
     private async Task<string> ToolUpdateAsync(Dictionary<string, object> args)
     {
         var filename = args["filename"].ToString()!;
         var content = args["content"].ToString()!;
-
         var path = Path.Combine(_workspace, filename);
 
         if (File.Exists(path))
@@ -336,20 +338,19 @@ public class McpServer
         }
 
         await File.WriteAllTextAsync(path, content);
-        return $"已更新 {filename}。";
+        return $"Updated {filename}.";
     }
 
     private string ToolNote(Dictionary<string, object> args)
     {
         var text = args["text"].ToString()!;
         _memoryStore.AppendToday(text);
-        return "已记录到今日日志。";
+        return "Recorded to today's log.";
     }
 
     private string ToolRead(Dictionary<string, object> args)
     {
         var mode = args.TryGetValue("mode", out var m) ? m.ToString() : "full";
-
         var parts = new List<string>();
 
         foreach (var file in new[] { "AGENTS.md", "SOUL.md", "IDENTITY.md", "USER.md", "TOOLS.md" })
@@ -378,13 +379,12 @@ public class McpServer
 
     private string ToolArchive()
     {
-        return _memoryStore.ArchiveToday() ? "已归档今日日志。" : "没有可归档的日志。";
+        return _memoryStore.ArchiveToday() ? "Archived today's log." : "No log to archive.";
     }
 
     private async Task<string> ToolEntityAsync(Dictionary<string, object> args)
     {
         var action = args["action"].ToString()!;
-
         return action switch
         {
             "add" => await EntityAddAsync(args),
@@ -392,7 +392,7 @@ public class McpServer
             "link" => await EntityLinkAsync(args),
             "query" => await EntityQueryAsync(args),
             "list" => await EntityListAsync(args),
-            _ => "未知操作"
+            _ => "Unknown action"
         };
     }
 
@@ -423,7 +423,7 @@ public class McpServer
     {
         var name = args["name"].ToString()!;
         var removed = await _entityStore.RemoveAsync(name);
-        return removed ? $"已删除 '{name}'。" : $"实体 '{name}' 不存在。";
+        return removed ? $"Deleted '{name}'." : $"Entity '{name}' does not exist.";
     }
 
     private async Task<string> EntityLinkAsync(Dictionary<string, object> args)
@@ -431,14 +431,14 @@ public class McpServer
         var name = args["name"].ToString()!;
         var relation = args["relation"].ToString()!;
         var linked = await _entityStore.LinkAsync(name, relation);
-        return linked ? $"已关联 '{name}' → '{relation}'。" : $"实体 '{name}' 不存在。";
+        return linked ? $"Linked '{name}' -> '{relation}'." : $"Entity '{name}' does not exist.";
     }
 
     private async Task<string> EntityQueryAsync(Dictionary<string, object> args)
     {
         var name = args["name"].ToString()!;
         var entity = await _entityStore.QueryAsync(name);
-        if (entity == null) return $"实体 '{name}' 不存在。";
+        if (entity == null) return $"Entity '{name}' does not exist.";
 
         var attrs = string.Join(", ", entity.Attributes.Select(a => $"{a.Key}: {a.Value}"));
         return $"**{entity.Name}** ({entity.Type})\nMentions: {entity.MentionCount}\nAttributes: {attrs}\nRelations: {string.Join("; ", entity.Relations)}";
@@ -453,7 +453,7 @@ public class McpServer
         }
 
         var entities = await _entityStore.ListAsync(filter);
-        if (entities.Count == 0) return "没有找到实体。";
+        if (entities.Count == 0) return "No entities found.";
 
         var lines = entities.Select(e => $"- **{e.Name}** ({e.Type}, {e.MentionCount}x) - last: {e.LastMentioned}");
         return $"## Entities ({entities.Count})\n{string.Join("\n", lines)}";
@@ -463,7 +463,7 @@ public class McpServer
     {
         var command = args["command"].ToString()!;
         var result = await _commandExecutor.ExecuteAsync(command);
-        return result.IsSuccess ? result.Output : $"错误 (退出码 {result.ExitCode}): {result.Output}";
+        return result.IsSuccess ? result.Output : $"Error (exit code {result.ExitCode}): {result.Output}";
     }
 
     private async Task<string> ToolBriefingAsync()
@@ -482,7 +482,7 @@ public class McpServer
             return $"""
                 === MyClaw Status ===
 
-                Distillation: {(evaluation.ShouldDistill ? $"⚠️ {evaluation.Urgency}: {evaluation.Reason}" : "✅ OK")}
+                Distillation: {(evaluation.ShouldDistill ? $"Warning {evaluation.Urgency}: {evaluation.Reason}" : "OK")}
                 Entities: {entityCount}
                 Archived: {archivedCount}
                 Skills: {_skillManager.LoadedSkills.Count}
@@ -503,7 +503,7 @@ public class McpServer
     {
         var skillName = name.Replace("skill_", "");
         var skill = _skillManager.GetSkill(skillName);
-        if (skill == null) return $"技能 '{skillName}' 不存在。";
+        if (skill == null) return $"Skill '{skillName}' does not exist.";
 
         var content = skill.GetSystemPrompt();
         return $"## Skill: {skill.Name}\n\n{content}\n\nInput: {JsonSerializer.Serialize(args)}";
@@ -512,19 +512,18 @@ public class McpServer
     private async Task<string> ToolSkillManagerAsync(Dictionary<string, object> args)
     {
         var action = args.TryGetValue("action", out var a) ? a.ToString() : "list";
-
         return action switch
         {
             "list" => ToolSkillList(),
             "create" => await ToolSkillCreateAsync(args),
             "delete" => ToolSkillDelete(args),
-            _ => "未知操作"
+            _ => "Unknown action"
         };
     }
 
     private string ToolSkillList()
     {
-        if (_skillManager.LoadedSkills.Count == 0) return "没有已安装的技能。";
+        if (_skillManager.LoadedSkills.Count == 0) return "No skills installed.";
         var lines = _skillManager.LoadedSkills.Select(s => $"- **{s.Name}**: {s.Description}");
         return $"## Skills ({_skillManager.LoadedSkills.Count})\n{string.Join("\n", lines)}";
     }
@@ -532,11 +531,11 @@ public class McpServer
     private async Task<string> ToolSkillCreateAsync(Dictionary<string, object> args)
     {
         if (!args.TryGetValue("name", out var nameObj) || nameObj == null)
-            return "错误: 需要提供 name 参数。";
+            return "Error: name parameter required.";
         if (!args.TryGetValue("description", out var descObj) || descObj == null)
-            return "错误: 需要提供 description 参数。";
+            return "Error: description parameter required.";
         if (!args.TryGetValue("content", out var contentObj) || contentObj == null)
-            return "错误: 需要提供 content 参数。";
+            return "Error: content parameter required.";
 
         var name = nameObj.ToString()!;
         var description = descObj.ToString()!;
@@ -549,28 +548,27 @@ public class McpServer
         await File.WriteAllTextAsync(skillPath, skillContent);
 
         _skillManager.LoadSkills();
-        return $"技能 '{name}' 已创建。";
+        return $"Skill '{name}' created.";
     }
 
     private string ToolSkillDelete(Dictionary<string, object> args)
     {
         if (!args.TryGetValue("name", out var nameObj) || nameObj == null)
-            return "错误: 需要提供 name 参数。";
+            return "Error: name parameter required.";
 
         var name = nameObj.ToString()!;
         var skillPath = Path.Combine(_workspace, "skills", $"{name}.md");
 
-        if (!File.Exists(skillPath)) return $"技能 '{name}' 不存在。";
+        if (!File.Exists(skillPath)) return $"Skill '{name}' does not exist.";
 
         File.Delete(skillPath);
         _skillManager.LoadSkills();
-        return $"技能 '{name}' 已删除。";
+        return $"Skill '{name}' deleted.";
     }
 
     private string ToolIntrospect(Dictionary<string, object> args)
     {
         var scope = args.TryGetValue("scope", out var s) ? s.ToString() : "summary";
-
         var entityCount = _entityStore.GetCountAsync().GetAwaiter().GetResult();
         var archivedCount = _memoryStore.GetArchivedCount();
         var skillCount = _skillManager.LoadedSkills.Count;
@@ -601,24 +599,24 @@ public class McpServer
                 - Entity store: {entityCount} entities
                 - Skills directory: {skillCount} files
                 """,
-            _ => "未知 scope 参数"
+            _ => "Unknown scope parameter"
         };
     }
 
     private string ToolDream()
     {
         var today = _memoryStore.ReadToday();
-        if (string.IsNullOrEmpty(today)) return "没有今日日志可供分析。";
+        if (string.IsNullOrEmpty(today)) return "No today's log available for analysis.";
 
         var evaluation = _memoryStore.EvaluateDistillation();
         return $"""
             ## Dream Analysis
 
-            今日活动记录长度: {today.Length} 字符
-            蒸馏建议: {(evaluation.ShouldDistill ? $"需要 ({evaluation.Urgency})" : "暂不需要")}
-            原因: {evaluation.Reason}
+            Today's activity log length: {today.Length} characters
+            Distillation recommendation: {(evaluation.ShouldDistill ? $"Needed ({evaluation.Urgency})" : "Not yet needed")}
+            Reason: {evaluation.Reason}
 
-            意义: 回顾今日记录，识别模式和洞察，准备长期记忆整合。
+            Purpose: Review today's records, identify patterns and insights, prepare for long-term memory integration.
             """;
     }
 
@@ -641,13 +639,13 @@ public class McpServer
             }
         }
 
-        return $"免疫升级完成。已备份 {backedUp.Count} 个核心文件: {string.Join(", ", backedUp)}";
+        return $"Immune upgrade complete. Backed up {backedUp.Count} core files: {string.Join(", ", backedUp)}";
     }
 
     private string ToolHeal()
     {
         var backupDir = Path.Combine(_workspace, ".backup");
-        if (!Directory.Exists(backupDir)) return "没有找到备份目录。";
+        if (!Directory.Exists(backupDir)) return "Backup directory not found.";
 
         var coreFiles = new[] { "IDENTITY.md", "SOUL.md", "AGENTS.md", "USER.md", "TOOLS.md", "MEMORY.md" };
         var restored = new List<string>();
@@ -663,7 +661,7 @@ public class McpServer
             }
         }
 
-        return $"基因修复完成。已恢复 {restored.Count} 个核心文件: {string.Join(", ", restored)}";
+        return $"Gene repair complete. Restored {restored.Count} core files: {string.Join(", ", restored)}";
     }
 
     private string ToolNociception(Dictionary<string, object> args)
@@ -673,48 +671,48 @@ public class McpServer
 
         return action switch
         {
-            "list" => File.Exists(nociceptionPath) ? File.ReadAllText(nociceptionPath) : "没有痛觉记忆。",
+            "list" => File.Exists(nociceptionPath) ? File.ReadAllText(nociceptionPath) : "No pain memories.",
             "record" => ToolNociceptionRecord(args, nociceptionPath),
             "check" => ToolNociceptionCheck(args, nociceptionPath),
             "clear" => ToolNociceptionClear(nociceptionPath),
-            _ => "未知操作"
+            _ => "Unknown action"
         };
     }
 
     private string ToolNociceptionRecord(Dictionary<string, object> args, string path)
     {
         if (!args.TryGetValue("stimulus", out var stimulus) || stimulus == null)
-            return "错误: 需要 stimulus 参数。";
+            return "Error: stimulus parameter required.";
         if (!args.TryGetValue("harm", out var harm) || harm == null)
-            return "错误: 需要 harm 参数。";
+            return "Error: harm parameter required.";
         if (!args.TryGetValue("strategy", out var strategy) || strategy == null)
-            return "错误: 需要 strategy 参数。";
+            return "Error: strategy parameter required.";
 
         var entry = $"""
 
-            ## 痛觉记录 - {DateTime.Now:yyyy-MM-dd HH:mm}
+            ## Pain Record - {DateTime.Now:yyyy-MM-dd HH:mm}
 
-            **触发点**: {stimulus}
-            **伤害结果**: {harm}
-            **规避方案**: {strategy}
+            **Trigger**: {stimulus}
+            **Harm Result**: {harm}
+            **Avoidance Strategy**: {strategy}
 
             """;
 
         File.AppendAllText(path, entry);
-        return "痛觉记忆已记录。";
+        return "Pain memory recorded.";
     }
 
     private string ToolNociceptionCheck(Dictionary<string, object> args, string path)
     {
-        if (!File.Exists(path)) return "没有痛觉记忆。";
+        if (!File.Exists(path)) return "No pain memories.";
 
         if (!args.TryGetValue("stimulus", out var stimulus) || stimulus == null)
-            return "错误: 需要 stimulus 参数。";
+            return "Error: stimulus parameter required.";
 
         var content = File.ReadAllText(path);
         return content.Contains(stimulus.ToString()!)
-            ? $"⚠️ 警告: '{stimulus}' 在痛觉记忆中找到匹配！"
-            : $"✅ '{stimulus}' 未在痛觉记忆中找到。";
+            ? $"Warning: '{stimulus}' found in pain memory!"
+            : $"OK: '{stimulus}' not found in pain memory.";
     }
 
     private string ToolNociceptionClear(string path)
@@ -722,19 +720,19 @@ public class McpServer
         if (File.Exists(path))
         {
             File.Delete(path);
-            return "痛觉记忆已清除。";
+            return "Pain memories cleared.";
         }
-        return "没有需要清除的痛觉记忆。";
+        return "No pain memories to clear.";
     }
 
     private object HandleListResources()
     {
         var resources = new List<object>
         {
-            new { uri = "myclaw://context", name = "MyClaw Context", mimeType = "text/markdown", description = "完整的上下文和记忆" },
-            new { uri = "myclaw://skills", name = "Skills Index", mimeType = "text/markdown", description = "技能列表" },
-            new { uri = "myclaw://status", name = "MyClaw Status", mimeType = "text/markdown", description = "系统状态" },
-            new { uri = "myclaw://briefing", name = "Daily Briefing", mimeType = "text/markdown", description = "每日简报（工具使用、记忆、待办、建议）" }
+            new { uri = "myclaw://context", name = "MyClaw Context", mimeType = "text/markdown", description = "Complete context and memories" },
+            new { uri = "myclaw://skills", name = "Skills Index", mimeType = "text/markdown", description = "Skills list" },
+            new { uri = "myclaw://status", name = "MyClaw Status", mimeType = "text/markdown", description = "System status" },
+            new { uri = "myclaw://briefing", name = "Daily Briefing", mimeType = "text/markdown", description = "Daily briefing (tool usage, memories, todos, suggestions)" }
         };
 
         return new { resources };
@@ -760,7 +758,7 @@ public class McpServer
                 "myclaw://context" => ToolRead(new Dictionary<string, object>()),
                 "myclaw://skills" => string.Join("\n", _skillManager.LoadedSkills.Select(s => $"- {s.Name}: {s.Description}")),
                 "myclaw://status" => ToolStatus(),
-                _ => "未知资源"
+                _ => "Unknown resource"
             };
         }
 
@@ -782,9 +780,9 @@ public class McpServer
     {
         var prompts = new List<object>
         {
-            new { name = "myclaw_wakeup", description = "唤醒并加载上下文" },
-            new { name = "myclaw_growup", description = "记忆蒸馏" },
-            new { name = "myclaw_briefing", description = "每日简报" }
+            new { name = "myclaw_wakeup", description = "Wake up and load context" },
+            new { name = "myclaw_growup", description = "Memory distillation" },
+            new { name = "myclaw_briefing", description = "Daily briefing" }
         };
 
         return new { prompts };
@@ -802,15 +800,15 @@ public class McpServer
         {
             "myclaw_wakeup" => new[]
             {
-                new { role = "user", content = new { type = "text", text = "系统: 正在唤醒... 调用工具 `myclaw_read` 加载上下文。" } }
+                new { role = "user", content = new { type = "text", text = "System: Waking up... Call tool `myclaw_read` to load context." } }
             },
             "myclaw_growup" => new[]
             {
-                new { role = "user", content = new { type = "text", text = "系统: 正在进行记忆蒸馏。检查今日日志并更新 MEMORY.md。" } }
+                new { role = "user", content = new { type = "text", text = "System: Performing memory distillation. Check today's log and update MEMORY.md." } }
             },
             "myclaw_briefing" => new[]
             {
-                new { role = "user", content = new { type = "text", text = "请调用工具 myclaw_briefing 获取完整每日简报（工具使用、记忆与实体、待办提醒、今日建议）。" } }
+                new { role = "user", content = new { type = "text", text = "Please call tool myclaw_briefing for complete daily briefing." } }
             },
             _ => Array.Empty<object>()
         };
@@ -818,54 +816,53 @@ public class McpServer
         return new { messages };
     }
 
-    private async Task WriteJsonRpcResultAsync(HttpListenerResponse response, object? id, object? result)
+    // Output helpers
+    private async Task SendResultAsync(object? id, object? result)
     {
-        var jsonRpcResponse = new
+        var response = new
         {
             jsonrpc = "2.0",
             id,
             result
         };
-        await WriteJsonAsync(response, jsonRpcResponse);
+        await WriteLineAsync(JsonSerializer.Serialize(response));
     }
 
-    private async Task WriteJsonRpcErrorAsync(HttpListenerResponse response, object? id, int code, string message)
+    private async Task SendErrorAsync(object? id, int code, string message)
     {
-        var jsonRpcResponse = new
+        var response = new
         {
             jsonrpc = "2.0",
             id,
             error = new { code, message }
         };
-        response.StatusCode = 400;
-        await WriteJsonAsync(response, jsonRpcResponse);
+        await WriteLineAsync(JsonSerializer.Serialize(response));
     }
 
-    private async Task WriteJsonAsync(HttpListenerResponse response, object data)
+    private async Task WriteLineAsync(string line)
     {
-        var json = JsonSerializer.Serialize(data, new JsonSerializerOptions
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
-        });
-        var bytes = Encoding.UTF8.GetBytes(json);
-        response.ContentType = "application/json";
-        response.ContentLength64 = bytes.Length;
-        await response.OutputStream.WriteAsync(bytes);
-        response.Close();
+        await Console.Out.WriteLineAsync(line);
     }
 
-    private async Task<string> ReadBodyAsync(HttpListenerRequest request)
+    public void Dispose()
     {
-        using var reader = new StreamReader(request.InputStream);
-        return await reader.ReadToEndAsync();
+        _cts?.Cancel();
+        _cts?.Dispose();
     }
 
+    // JSON RPC types
     private class JsonRpcRequest
     {
+        [JsonPropertyName("jsonrpc")]
         public string JsonRpc { get; set; } = string.Empty;
+
+        [JsonPropertyName("id")]
         public object? Id { get; set; }
+
+        [JsonPropertyName("method")]
         public string Method { get; set; } = string.Empty;
+
+        [JsonPropertyName("params")]
         public JsonElement? Params { get; set; }
     }
 
@@ -873,5 +870,10 @@ public class McpServer
     {
         public int Code { get; set; }
         public string Message { get; set; } = string.Empty;
+    }
+
+    private class ClientCapabilities
+    {
+        // Placeholder for client capabilities
     }
 }

@@ -1,17 +1,43 @@
 using MyClaw.Core.Logging;
 using MyClaw.MCP;
 
-// 所有日志输出到 stderr，避免干扰 stdout（用于 stdio MCP 传输）
+// All logs to stderr to avoid stdout pollution (stdio MCP transport)
 Log.Info("MyClaw MCP Server starting...");
 Log.Info("Version: 1.0.0");
-Log.Info("Protocol: MCP over HTTP/SSE");
+Log.Info("Protocol: MCP over stdio");
+Log.Info("Use Ctrl+C to stop.");
+Log.Info("");
 
-var port = args.Length > 0 && int.TryParse(args[0], out var p) ? p : 2334;
-var server = new McpServer(port);
+// Get workspace path from args or use default
+string? workspacePath = null;
+if (args.Length > 0 && !args[0].StartsWith("--"))
+{
+    workspacePath = args[0];
+}
 
-await server.StartAsync();
+using var cts = new CancellationTokenSource();
 
-Log.Info($"Server listening on http://localhost:{port}");
-Log.Info("Press Ctrl+C to stop.");
+// Handle Ctrl+C
+Console.CancelKeyPress += (sender, e) =>
+{
+    e.Cancel = true;
+    Log.Info("Shutting down...");
+    cts.Cancel();
+};
 
-await Task.Delay(-1);
+// Start server
+var server = new McpServer(workspacePath);
+await server.StartAsync(cts.Token);
+
+// Wait for cancellation
+try
+{
+    await Task.Delay(-1, cts.Token);
+}
+catch (OperationCanceledException)
+{
+    // Normal shutdown
+}
+
+await server.StopAsync();
+Log.Info("Server stopped.");

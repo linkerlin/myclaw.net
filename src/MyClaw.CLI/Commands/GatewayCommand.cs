@@ -108,12 +108,8 @@ public class GatewayCommand : Command
                 cts.Cancel();
             };
 
-            // 启动 MCP 服务
-            KillProcessOnPort(mcpPort);
-            AnsiConsole.MarkupLine($"[blue]正在端口 {mcpPort} 启动 MCP 服务...[/]");
-            var mcpServer = new McpServer(mcpPort);
-            await mcpServer.StartAsync();
-            AnsiConsole.MarkupLine($"[green]✓ MCP 服务已启动 http://localhost:{mcpPort}[/]");
+            // MCP 服务现在使用 stdio 模式，需要作为子进程启动
+            AnsiConsole.MarkupLine($"[blue]注意: MCP 服务已改为 stdio 模式，请在单独的终端运行 'myclaw mcp'[/]");
 
             // 检查并清理网关端口
             KillProcessOnPort(cfg.Gateway.Port);
@@ -148,13 +144,11 @@ public class GatewayCommand : Command
             catch (OperationCanceledException)
             {
                 AnsiConsole.MarkupLine("\n[yellow]正在关闭服务...[/]");
-                await mcpServer.StopAsync();
                 AnsiConsole.MarkupLine("[green]✓ 服务已停止[/]");
             }
             catch (Exception ex)
             {
                 AnsiConsole.MarkupLine($"[red]网关错误: {ex.Message}[/]");
-                await mcpServer.StopAsync();
             }
         }, mcpPortOption);
     }

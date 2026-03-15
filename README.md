@@ -230,18 +230,31 @@ myclaw mcp
 # 或从源码: dotnet run --project src/MyClaw.Mcp
 ```
 
-服务会在 `http://localhost:2334` 启动。
+MCP 服务使用 **stdio 模式** 与 AI 客户端通信。
 
 ### 连接到你的 AI 客户端
 
-如果你用 Claude 或 Kimi，在 MCP 配置中添加：
+如果你用 Claude Desktop 或支持 MCP 的客户端，在配置中添加：
 
 ```json
 {
   "mcpServers": {
     "myclaw": {
-      "type": "streamable-http",
-      "url": "http://localhost:2334/mcp"
+      "command": "myclaw",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+或使用完整路径：
+
+```json
+{
+  "mcpServers": {
+    "myclaw": {
+      "command": "/path/to/myclaw",
+      "args": ["mcp"]
     }
   }
 }
