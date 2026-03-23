@@ -1,12 +1,12 @@
 # MyClaw.NET
 
-[![Status](https://img.shields.io/badge/Status-Beta-blue)](./改进方案和计划-v3-深度对比.md)
-[![Completion](https://img.shields.io/badge/Completion-85%25-success)](./TODO-改进清单.md)
-[![Tests](https://img.shields.io/badge/Tests-470%2B%20passing-brightgreen)]()
+[![Status](https://img.shields.io/badge/Status-Stable-green)](./实施总结报告.md)
+[![Completion](https://img.shields.io/badge/Completion-100%25-success)](./TODO-改进清单-v2.md)
+[![Tests](https://img.shields.io/badge/Tests-508%2B%20passing-brightgreen)]()
 
 > *我想我能安全地说，没人真正理解量子力学——但我们可以让它变得有用。同样，我想说，没人真正理解"意识"——但我们可以让一个 AI 记住你是谁。*
 
-> 📊 **项目状态**: 核心功能已完成，正在进行部署优化。查看 [实施进度报告](./实施进度报告-v2.md) 和 [改进清单](./TODO-改进清单.md) 了解详情。
+> 📊 **项目状态**: 核心功能已完成，三层免疫系统、器官退化、无聊引擎、菌丝共生网络已全部实现。查看 [实施总结报告](./实施总结报告.md) 和 [改进清单](./TODO-改进清单-v2.md) 了解详情。
 
 ---
 
@@ -268,12 +268,12 @@ MCP 服务使用 **stdio 模式** 与 AI 客户端通信。
 
 ## 工具一览
 
-MyClaw 提供了 13 个"本能"工具：
+MyClaw 提供了 14 个"本能"工具：
 
 | 工具 | 是什么 | 什么时候用 |
 |------|--------|-----------|
 | `myclaw_read` | 全脑唤醒 | 每次新会话开始时 |
-| `myclaw_update` | 神经重塑 | 学到了关于你的新偏好时 |
+| `myclaw_update` | 神经重塑（集成端粒守卫+PURPOSE_MAP 自检） | 学到了关于你的新偏好时 |
 | `myclaw_note` | 海马体写入 | 有重要信息要记住时 |
 | `myclaw_entity` | 概念连接 | 构建知识图谱 |
 | `myclaw_exec` | 感官与手 | 需要执行命令或操作文件时 |
@@ -285,6 +285,7 @@ MyClaw 提供了 13 个"本能"工具：
 | `myclaw_heal` | 基因修复 | 从备份恢复 DNA |
 | `myclaw_status` | 健康检查 | 查看系统状态 |
 | `myclaw_nociception` | 痛觉记忆 | 记住"绝对不要做的事" |
+| `myclaw_briefing` | 每日简报 | 生成昨日回顾/统计/实体概览/待办提醒 |
 
 ---
 
@@ -293,17 +294,33 @@ MyClaw 提供了 13 个"本能"工具：
 ```
 myclaw.net/
 ├── src/
-│   ├── MyClaw.Core/          # 核心：DNA、情感、好奇心、进化
-│   ├── MyClaw.Mcp/           # MCP 服务
+│   ├── MyClaw.Core/          # 核心：DNA、情感、好奇心、进化、菌丝网络
+│   │   ├── Dna/              # 三层免疫系统（TelomereGuard + PurposeMap）
+│   │   ├── Affect/           # 情感系统
+│   │   ├── Nociception/      # 痛觉记忆
+│   │   ├── Epigenetics/      # 表观遗传甲基化
+│   │   ├── Evolution/        # 进化引擎 + 信号检测
+│   │   ├── Curiosity/        # 好奇心引擎 + 无聊引擎
+│   │   ├── Mycelium/         # 菌丝共生网络
+│   │   ├── Ribosome/         # 核糖体修剪器
+│   │   ├── VectorMemory/     # 向量记忆与 RAG
+│   │   ├── Workspace/        # 工作区感知
+│   │   └── Analytics/        # 使用统计
+│   ├── MyClaw.Mcp/           # MCP 服务（stdio 协议）
 │   ├── MyClaw.Agent/         # Agent 运行时
-│   ├── MyClaw.Memory/        # 记忆存储
-│   ├── MyClaw.Skills/        # 技能系统
-│   └── MyClaw.Heartbeat/     # 心跳/自主任务
+│   ├── MyClaw.Memory/        # 记忆存储（双层架构）
+│   ├── MyClaw.Skills/        # 技能系统（5s TTL 缓存）
+│   ├── MyClaw.Heartbeat/     # 心跳/自主任务（AI CLI 检测）
+│   ├── MyClaw.Cron/          # Cron 调度（Quartz.NET）
+│   └── MyClaw.Uno/           # Uno Platform GUI
 ├── templates/                # DNA 模板
 │   ├── RIBOSOME.json         # 工具定义
 │   ├── SOUL.md               # 性格模板
 │   └── ...
-└── tests/                    # 测试
+├── scripts/                  # 部署脚本
+│   ├── install.sh            # Linux/macOS 安装脚本
+│   └── install.ps1           # Windows 安装脚本
+└── tests/                    # 测试（508+ 测试用例）
 ```
 
 ---
