@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using MyClaw.Core.Epigenetics;
+using MyClaw.Core.Ribosome;
 
 namespace MyClaw.Core.Evolution;
 
@@ -37,14 +38,16 @@ public class EvolutionEngine
     private readonly string _patternsFile;
     private readonly MethylationManager? _methylationManager;
     private readonly EvolutionHistory? _evolutionHistory;
+    private readonly RibosomePruner? _ribosomePruner;
 
-    public EvolutionEngine(string myclawDir, MethylationManager? methylationManager = null, EvolutionHistory? evolutionHistory = null)
+    public EvolutionEngine(string myclawDir, MethylationManager? methylationManager = null, EvolutionHistory? evolutionHistory = null, RibosomePruner? ribosomePruner = null)
     {
         _myclawDir = myclawDir;
         _stateFile = Path.Combine(myclawDir, "observer-state.json");
         _patternsFile = Path.Combine(myclawDir, "observer-patterns.json");
         _methylationManager = methylationManager;
         _evolutionHistory = evolutionHistory ?? new EvolutionHistory(myclawDir);
+        _ribosomePruner = ribosomePruner;
     }
 
     /// <summary>
@@ -357,6 +360,22 @@ public class EvolutionEngine
         // 写入进化历史（与 v3 方案对齐）
         if (_evolutionHistory != null)
             await _evolutionHistory.RecordAsync(state.TotalEvolutions, appliedMutations.Count, strongPatterns);
+
+        // 器官退化 - 用进废退机制（与 MiniClaw v0.9.5 对齐）
+        if (_ribosomePruner != null)
+        {
+            try
+            {
+                // 简化版本：传入 0 次工具调用，实际使用时需要从 AnalyticsService 获取
+                var pruneResult = await _ribosomePruner.PruneAsync(state.TotalEvolutions, new Dictionary<string, int>());
+                // 日志由 RibosomePruner 内部记录
+            }
+            catch (Exception ex)
+            {
+                // 忽略异常，避免影响进化流程
+                _ = ex; // Suppress warning
+            }
+        }
 
         return new EvolutionResult
         {

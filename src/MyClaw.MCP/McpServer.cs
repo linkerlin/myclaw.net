@@ -5,6 +5,7 @@ using System.Text.Json.Serialization;
 using MyClaw.Core.Analytics;
 using MyClaw.Core.Briefing;
 using MyClaw.Core.Configuration;
+using MyClaw.Core.Dna;
 using MyClaw.Core.Entities;
 using MyClaw.Core.Evolution;
 using MyClaw.Core.Execution;
@@ -332,13 +333,31 @@ public class McpServer : IDisposable
         var content = args["content"].ToString()!;
         var path = Path.Combine(_workspace, filename);
 
+        // Layer 2: 事中校验 - 端粒守卫
+        // 在写入前校验结构完整性，防止基因癌变
+        try
+        {
+            TelomereGuard.Check(filename, content);
+        }
+        catch (DnaMutationException ex)
+        {
+            // 返回详细的错误信息，引导 AI 自我修复
+            return ex.Message;
+        }
+
+        // 备份原文件
         if (File.Exists(path))
         {
             File.Copy(path, path + ".bak", overwrite: true);
         }
 
+        // 写入新内容
         await File.WriteAllTextAsync(path, content);
-        return $"Updated {filename}.";
+
+        // Layer 3: 事后自检 - PURPOSE_MAP 自检镜像
+        // 返回文件职责声明，触发 AI 自我纠正
+        var purpose = PurposeMap.GetPurpose(filename);
+        return $"Updated {filename}.\n📝 Purpose: {purpose}";
     }
 
     private string ToolNote(Dictionary<string, object> args)
