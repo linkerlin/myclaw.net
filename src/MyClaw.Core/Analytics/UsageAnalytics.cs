@@ -31,6 +31,11 @@ public class UsageAnalytics
     public string LastActivity { get; set; } = string.Empty;
 
     /// <summary>
+    /// 最后一次无聊扫描执行时间
+    /// </summary>
+    public string LastBoredomExecution { get; set; } = string.Empty;
+
+    /// <summary>
     /// 技能使用统计
     /// </summary>
     public Dictionary<string, int> SkillUsage { get; set; } = new();

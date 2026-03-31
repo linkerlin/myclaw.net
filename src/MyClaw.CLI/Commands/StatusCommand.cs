@@ -3,6 +3,7 @@ using System.CommandLine;
 using System.IO;
 using System.Threading.Tasks;
 using MyClaw.Core.Configuration;
+using MyClaw.Skills;
 using Spectre.Console;
 
 namespace MyClaw.CLI.Commands;
@@ -81,9 +82,7 @@ public class StatusCommand : Command
 
     private static string GetSkillsDir(MyClawConfiguration cfg)
     {
-        return string.IsNullOrEmpty(cfg.Skills.Dir)
-            ? Path.Combine(cfg.Agent.Workspace, "skills")
-            : cfg.Skills.Dir;
+        return SkillPaths.ResolveSkillsDirectory(cfg.Agent.Workspace, cfg.Skills.Dir);
     }
 
     private static (string display, string source) GetApiKeyDisplay(MyClawConfiguration cfg)

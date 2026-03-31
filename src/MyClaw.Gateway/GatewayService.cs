@@ -1,7 +1,10 @@
 using MyClaw.Agent;
 using MyClaw.Channels;
+using MyClaw.Core.Analytics;
 using MyClaw.Core.Configuration;
+using MyClaw.Core.Curiosity;
 using MyClaw.Core.Messaging;
+using MyClaw.Core.Mycelium;
 using MyClaw.Cron;
 using MyClaw.Heartbeat;
 using MyClaw.Memory;
@@ -23,6 +26,9 @@ public class GatewayService
     private readonly SkillManager _skillManager;
     private readonly CronService _cronService;
     private readonly HeartbeatService _heartbeatService;
+    private readonly AnalyticsService _analyticsService;
+    private readonly BoredomEngine _boredomEngine;
+    private readonly MyceliumNetwork _myceliumNetwork;
     private MyClawAgent? _agent;
     private CancellationTokenSource? _cts;
 
@@ -32,7 +38,22 @@ public class GatewayService
         _messageBus = new MessageBus(MyClawConfiguration.DefaultBufSize);
         _channelManager = new ChannelManager(_messageBus);
         _memoryStore = new MemoryStore(config.Agent.Workspace);
-        _skillManager = new SkillManager(config.Agent.Workspace);
+        _skillManager = new SkillManager(SkillPaths.ResolveSkillsDirectory(config.Agent.Workspace, config.Skills.Dir));
+        _analyticsService = new AnalyticsService(config.Agent.Workspace);
+        _myceliumNetwork = new MyceliumNetwork(config.Agent.Workspace);
+        _boredomEngine = new BoredomEngine(
+            config.Agent.Workspace,
+            config.Agent.Workspace,
+            () => Task.FromResult(_analyticsService.GetAnalytics()),
+            analytics =>
+            {
+                if (DateTime.TryParse(analytics.LastBoredomExecution, out var executedAt))
+                {
+                    _analyticsService.TrackBoredomExecution(executedAt);
+                }
+
+                return Task.CompletedTask;
+            });
         
         // 加载 Skills
         _skillManager.LoadSkills();
@@ -47,6 +68,7 @@ public class GatewayService
         // Heartbeat 服务
         _heartbeatService = new HeartbeatService(config.Agent.Workspace);
         _heartbeatService.OnHeartbeat = ExecuteHeartbeatAsync;
+        _heartbeatService.BuildSupplementalContext = BuildHeartbeatSupplementalContextAsync;
     }
 
     /// <summary>
@@ -56,6 +78,7 @@ public class GatewayService
     {
         _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         var token = _cts.Token;
+        var bootStart = DateTime.UtcNow;
 
         try
         {
@@ -87,6 +110,8 @@ public class GatewayService
 
             // 启动 Heartbeat 服务
             _ = Task.Run(() => _heartbeatService.StartAsync(token), token);
+
+            _analyticsService.TrackBoot((long)(DateTime.UtcNow - bootStart).TotalMilliseconds);
 
             // 启动消息处理循环
             await ProcessLoopAsync(token);
@@ -197,7 +222,46 @@ public class GatewayService
             return "错误: Agent 未初始化";
         }
 
+        if (!string.Equals(sessionId, "heartbeat", StringComparison.OrdinalIgnoreCase))
+        {
+            var promptName = string.Equals(sessionId, "cron", StringComparison.OrdinalIgnoreCase)
+                ? "cron"
+                : "chat";
+            _analyticsService.TrackPrompt(promptName);
+        }
+
         return await _agent.ChatAsync(prompt, sessionId);
+    }
+
+    private async Task<string?> BuildHeartbeatSupplementalContextAsync()
+    {
+        var sections = new List<string>();
+        var verboseSupplementalContext = _config.Agent.Verbose;
+
+        var hookSection = _skillManager.BuildHookContext(SkillHookType.Heartbeat);
+        if (!string.IsNullOrWhiteSpace(hookSection))
+        {
+            sections.Add(hookSection);
+        }
+
+        var absorption = await _myceliumNetwork.AbsorbSporesAsync(_config.Agent.Workspace);
+        var myceliumSection = HeartbeatSupplementalContextFormatter.FormatMycelium(absorption, verboseSupplementalContext);
+        if (!string.IsNullOrWhiteSpace(myceliumSection))
+        {
+            sections.Add(myceliumSection);
+        }
+
+        var boredom = await _boredomEngine.CheckAndExecuteAsync();
+        var boredomSection = HeartbeatSupplementalContextFormatter.FormatBoredom(
+            boredom,
+            _config.Agent.Workspace,
+            verboseSupplementalContext);
+        if (!string.IsNullOrWhiteSpace(boredomSection))
+        {
+            sections.Add(boredomSection);
+        }
+
+        return sections.Count == 0 ? null : string.Join("\n\n", sections);
     }
 
     private static string Truncate(string s, int n)

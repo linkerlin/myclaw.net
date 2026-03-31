@@ -22,6 +22,7 @@
     <ProjectReference Include="..\..\src\MyClaw.Core\MyClaw.Core.csproj" />
     <ProjectReference Include="..\..\src\MyClaw.Agent\MyClaw.Agent.csproj" />
     <ProjectReference Include="..\..\src\MyClaw.Gateway\MyClaw.Gateway.csproj" />
+    <ProjectReference Include="..\..\src\MyClaw.Heartbeat\MyClaw.Heartbeat.csproj" />
     <ProjectReference Include="..\..\src\MyClaw.MCP\MyClaw.MCP.csproj" />
     <ProjectReference Include="..\..\src\MyClaw.Memory\MyClaw.Memory.csproj" />
     <ProjectReference Include="..\..\src\MyClaw.Skills\MyClaw.Skills.csproj" />

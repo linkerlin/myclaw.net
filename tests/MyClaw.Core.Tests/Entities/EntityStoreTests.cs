@@ -6,12 +6,13 @@ public class EntityStoreTests : IDisposable
 {
     private readonly string _testWorkspace;
     private readonly EntityStore _store;
+    private DateTime _now = new(2026, 1, 10);
 
     public EntityStoreTests()
     {
         _testWorkspace = Path.Combine(Path.GetTempPath(), $"myclaw_test_{Guid.NewGuid()}");
         Directory.CreateDirectory(_testWorkspace);
-        _store = new EntityStore(_testWorkspace);
+        _store = new EntityStore(_testWorkspace, () => _now);
     }
 
     public void Dispose()
@@ -38,8 +39,10 @@ public class EntityStoreTests : IDisposable
         Assert.Equal("TestProject", result.Name);
         Assert.Equal(EntityType.Project, result.Type);
         Assert.Equal(1, result.MentionCount);
+        Assert.Equal(100, result.Vitality);
         Assert.NotEmpty(result.FirstMentioned);
         Assert.NotEmpty(result.LastMentioned);
+        Assert.Equal("2026-01-10", result.VitalityUpdatedAt);
         Assert.Single(result.Attributes);
         Assert.Single(result.Relations);
     }
@@ -58,6 +61,7 @@ public class EntityStoreTests : IDisposable
         var result = await _store.AddAsync(entity);
 
         Assert.Equal(2, result.MentionCount);
+        Assert.Equal(100, result.Vitality);
     }
 
     [Fact]
@@ -197,6 +201,45 @@ public class EntityStoreTests : IDisposable
         var all = await _store.ListAsync();
 
         Assert.Equal(2, all.Count);
+    }
+
+    [Fact]
+    public async Task QueryAsync_ShouldDecayVitalityByElapsedDays()
+    {
+        await _store.AddAsync(new Entity { Name = "DecayMe", Type = EntityType.Other });
+        _now = _now.AddDays(3);
+
+        var result = await _store.QueryAsync("DecayMe");
+
+        Assert.NotNull(result);
+        Assert.Equal(70, result!.Vitality);
+        Assert.Equal("2026-01-13", result.VitalityUpdatedAt);
+    }
+
+    [Fact]
+    public async Task AddAsync_ExistingEntity_ShouldRestoreVitalityWhenMentionedAgain()
+    {
+        await _store.AddAsync(new Entity { Name = "Recurring", Type = EntityType.Other });
+        _now = _now.AddDays(4);
+
+        var result = await _store.AddAsync(new Entity { Name = "Recurring", Type = EntityType.Other });
+
+        Assert.Equal(2, result.MentionCount);
+        Assert.Equal(85, result.Vitality);
+        Assert.Equal("2026-01-14", result.LastMentioned);
+        Assert.Equal("2026-01-14", result.VitalityUpdatedAt);
+    }
+
+    [Fact]
+    public async Task ListAsync_ShouldRemoveEntitiesWhenVitalityDropsToZero()
+    {
+        await _store.AddAsync(new Entity { Name = "Ephemeral", Type = EntityType.Other });
+        _now = _now.AddDays(10);
+
+        var entities = await _store.ListAsync();
+
+        Assert.Empty(entities);
+        Assert.Equal(0, await _store.GetCountAsync());
     }
 
     [Fact]

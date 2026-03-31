@@ -172,6 +172,23 @@ public class AnalyticsService
     }
 
     /// <summary>
+    /// 记录一次无聊执行
+    /// </summary>
+    public void TrackBoredomExecution(DateTime? executedAt = null)
+    {
+        Load();
+
+        lock (_lock)
+        {
+            var now = executedAt ?? DateTime.UtcNow;
+            _state.Analytics.LastBoredomExecution = now.ToString("O");
+            _state.Analytics.LastActivity = now.ToString("O");
+        }
+
+        Save();
+    }
+
+    /// <summary>
     /// 获取分析数据
     /// </summary>
     public UsageAnalytics GetAnalytics()
@@ -188,6 +205,7 @@ public class AnalyticsService
                 BootCount = _state.Analytics.BootCount,
                 TotalBootMs = _state.Analytics.TotalBootMs,
                 LastActivity = _state.Analytics.LastActivity,
+                LastBoredomExecution = _state.Analytics.LastBoredomExecution,
                 SkillUsage = new Dictionary<string, int>(_state.Analytics.SkillUsage),
                 DailyDistillations = _state.Analytics.DailyDistillations
             };

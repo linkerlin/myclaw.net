@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -11,6 +12,7 @@ using MyClaw.Core.Evolution;
 using MyClaw.Core.Execution;
 using MyClaw.Core.Logging;
 using MyClaw.Core.Memory;
+using MyClaw.Core.Mycelium;
 using MyClaw.Core.Ribosome;
 using MyClaw.Skills;
 
@@ -21,6 +23,12 @@ namespace MyClaw.MCP;
 /// </summary>
 public class McpServer : IDisposable
 {
+    private static readonly HashSet<string> MutableDnaTargets = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "SOUL.md",
+        "IDENTITY.md"
+    };
+
     private readonly string? _workspacePath;
     private CancellationTokenSource? _cts;
     private Task? _readLoopTask;
@@ -34,10 +42,10 @@ public class McpServer : IDisposable
     private AnalyticsService _analyticsService = null!;
     private ToolUsageTracker _toolUsageTracker = null!;
     private DailyBriefingService _dailyBriefingService = null!;
+    private MyceliumNetwork _myceliumNetwork = null!;
     private string _workspace = null!;
 
     // Protocol state
-    private bool _initialized = false;
     private string _clientProtocolVersion = "2024-11-05";
     private ClientCapabilities? _clientCapabilities;
 
@@ -58,7 +66,7 @@ public class McpServer : IDisposable
 
         _memoryStore = new MemoryStore(_workspace);
         _entityStore = new EntityStore(_workspace);
-        _skillManager = new SkillManager(_workspace);
+        _skillManager = new SkillManager(SkillPaths.ResolveSkillsDirectory(_workspace));
         _skillManager.LoadSkills();
         _commandExecutor = new CommandExecutor();
         _signalDetector = new SignalDetector();
@@ -75,6 +83,7 @@ public class McpServer : IDisposable
         _toolUsageTracker = new ToolUsageTracker(_workspace);
         var statisticsReporter = new StatisticsReporter(_analyticsService, _toolUsageTracker);
         _dailyBriefingService = new DailyBriefingService(_memoryStore, _analyticsService, _entityStore, statisticsReporter, _toolUsageTracker);
+        _myceliumNetwork = new MyceliumNetwork(_workspace);
 
         await _entityStore.LoadAsync();
 
@@ -200,8 +209,6 @@ public class McpServer : IDisposable
 
     private object HandleInitialize(JsonElement? Params)
     {
-        _initialized = true;
-
         if (Params.HasValue)
         {
             var params_obj = Params.Value;
@@ -304,6 +311,8 @@ public class McpServer : IDisposable
             return name switch
             {
                 "myclaw_update" => await ToolUpdateAsync(args),
+                "myclaw_mutate" => await ToolMutateAsync(args),
+                "myclaw_reproduce" => await ToolReproduceAsync(args),
                 "myclaw_note" => ToolNote(args),
                 "myclaw_read" => ToolRead(args),
                 "myclaw_archive" => ToolArchive(),
@@ -312,10 +321,10 @@ public class McpServer : IDisposable
                 "myclaw_status" => ToolStatus(),
                 "myclaw_skill" => await ToolSkillManagerAsync(args),
                 "myclaw_introspect" => ToolIntrospect(args),
-                "myclaw_dream" => ToolDream(),
+                "myclaw_dream" => await ToolDreamAsync(),
                 "myclaw_immune" => ToolImmune(),
                 "myclaw_heal" => ToolHeal(),
-                "myclaw_nociception" => ToolNociception(args),
+                "myclaw_nociception" => await ToolNociceptionAsync(args),
                 "myclaw_briefing" => await ToolBriefingAsync(),
                 _ => name.StartsWith("skill_") ? await ToolSkillAsync(name, args) : $"Unknown tool: {name}"
             };
@@ -354,17 +363,19 @@ public class McpServer : IDisposable
         // 写入新内容
         await File.WriteAllTextAsync(path, content);
 
+        await TrySecreteSporeAsync(filename, content);
+
         // Layer 3: 事后自检 - PURPOSE_MAP 自检镜像
         // 返回文件职责声明，触发 AI 自我纠正
         var purpose = PurposeMap.GetPurpose(filename);
-        return $"Updated {filename}.\n📝 Purpose: {purpose}";
+        return AppendSkillHookContext($"Updated {filename}.\n📝 Purpose: {purpose}", SkillHookType.FileChanged, filename);
     }
 
     private string ToolNote(Dictionary<string, object> args)
     {
         var text = args["text"].ToString()!;
         _memoryStore.AppendToday(text);
-        return "Recorded to today's log.";
+        return AppendSkillHookContext("Recorded to today's log.", SkillHookType.MemoryWrite);
     }
 
     private string ToolRead(Dictionary<string, object> args)
@@ -401,6 +412,132 @@ public class McpServer : IDisposable
         return _memoryStore.ArchiveToday() ? "Archived today's log." : "No log to archive.";
     }
 
+    private async Task<string> ToolMutateAsync(Dictionary<string, object> args)
+    {
+        if (!args.TryGetValue("target", out var targetObj) || targetObj == null)
+            return "Error: target parameter required.";
+        if (!args.TryGetValue("content", out var contentObj) || contentObj == null)
+            return "Error: content parameter required.";
+
+        var target = targetObj.ToString()!;
+        var content = contentObj.ToString()!;
+
+        if (!MutableDnaTargets.Contains(target))
+        {
+            return "Error: Mutation rejected. Only SOUL.md and IDENTITY.md can be rewritten.";
+        }
+
+        var path = Path.Combine(_workspace, target);
+        if (!File.Exists(path))
+        {
+            return $"Error: target '{target}' does not exist. Seed it before mutation so a backup can be created.";
+        }
+
+        try
+        {
+            TelomereGuard.Check(target, content);
+        }
+        catch (DnaMutationException ex)
+        {
+            return ex.Message;
+        }
+
+        var backupPath = path + ".bak";
+        File.Copy(path, backupPath, overwrite: true);
+        await File.WriteAllTextAsync(path, content);
+
+        var purpose = PurposeMap.GetPurpose(target);
+        return AppendSkillHookContext(
+            $"Mutated {target}.\nBackup: {Path.GetFileName(backupPath)}\n📝 Purpose: {purpose}",
+            SkillHookType.FileChanged,
+            target);
+    }
+
+    private async Task<string> ToolReproduceAsync(Dictionary<string, object> args)
+    {
+        var format = args.TryGetValue("format", out var formatObj) && formatObj != null
+            ? formatObj.ToString()?.Trim().ToLowerInvariant()
+            : "zip";
+
+        if (!string.IsNullOrEmpty(format) && format != "zip")
+        {
+            return "Error: unsupported format. Only zip is currently supported.";
+        }
+
+        var sporesDir = Path.Combine(_workspace, "spores");
+        Directory.CreateDirectory(sporesDir);
+        var sporeSuffix = Guid.NewGuid().ToString("N")[..8];
+
+        var archivePath = Path.Combine(
+            sporesDir,
+            $"myclaw_{DateTime.UtcNow:yyyyMMdd_HHmmss}_{sporeSuffix}.spore.zip");
+
+        var includedEntries = new List<string>();
+
+        using (var archive = ZipFile.Open(archivePath, ZipArchiveMode.Create))
+        {
+            foreach (var dnaFile in PurposeMap.GetCoreDnaFiles().OrderBy(name => name, StringComparer.OrdinalIgnoreCase))
+            {
+                var sourcePath = Path.Combine(_workspace, dnaFile);
+                if (!File.Exists(sourcePath))
+                {
+                    continue;
+                }
+
+                AddFileToArchive(archive, sourcePath, dnaFile.Replace('\\', '/'));
+                includedEntries.Add(dnaFile);
+            }
+
+            var longTermMemoryPath = Path.Combine(_workspace, "memory", "MEMORY.md");
+            if (File.Exists(longTermMemoryPath))
+            {
+                AddFileToArchive(archive, longTermMemoryPath, "memory/MEMORY.md");
+                includedEntries.Add("memory/MEMORY.md");
+            }
+
+            var entitiesPath = Path.Combine(_workspace, "entities.json");
+            if (File.Exists(entitiesPath))
+            {
+                AddFileToArchive(archive, entitiesPath, "entities.json");
+                includedEntries.Add("entities.json");
+            }
+
+            var skillsDir = Path.Combine(_workspace, "skills");
+            if (Directory.Exists(skillsDir))
+            {
+                foreach (var skillFile in Directory.GetFiles(skillsDir, "*", SearchOption.AllDirectories))
+                {
+                    var entryName = Path.GetRelativePath(_workspace, skillFile).Replace('\\', '/');
+                    AddFileToArchive(archive, skillFile, entryName);
+                    includedEntries.Add(entryName);
+                }
+            }
+
+            var manifest = new
+            {
+                createdAt = DateTime.UtcNow.ToString("O"),
+                format = "zip",
+                workspace = Path.GetFileName(_workspace.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)),
+                includedEntries = includedEntries.Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(entry => entry, StringComparer.OrdinalIgnoreCase).ToArray()
+            };
+
+            var manifestEntry = archive.CreateEntry("manifest.json", CompressionLevel.Optimal);
+            await using var manifestStream = manifestEntry.Open();
+            await JsonSerializer.SerializeAsync(manifestStream, manifest, new JsonSerializerOptions
+            {
+                WriteIndented = true
+            });
+        }
+
+        var distinctEntries = includedEntries.Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(entry => entry, StringComparer.OrdinalIgnoreCase).ToList();
+        return $"Reproduction complete. Zip spore created at: {archivePath}\nIncluded {distinctEntries.Count} item(s): {string.Join(", ", distinctEntries)}";
+    }
+
+    private static void AddFileToArchive(ZipArchive archive, string sourcePath, string entryName)
+    {
+        archive.CreateEntryFromFile(sourcePath, entryName, CompressionLevel.Optimal);
+    }
+
     private async Task<string> ToolEntityAsync(Dictionary<string, object> args)
     {
         var action = args["action"].ToString()!;
@@ -435,7 +572,7 @@ public class McpServer : IDisposable
         };
 
         var result = await _entityStore.AddAsync(entity);
-        return $"Entity '{result.Name}' ({result.Type}) - {result.MentionCount} mentions.";
+        return $"Entity '{result.Name}' ({result.Type}) - {result.MentionCount} mentions, vitality {result.Vitality}.";
     }
 
     private async Task<string> EntityRemoveAsync(Dictionary<string, object> args)
@@ -460,7 +597,7 @@ public class McpServer : IDisposable
         if (entity == null) return $"Entity '{name}' does not exist.";
 
         var attrs = string.Join(", ", entity.Attributes.Select(a => $"{a.Key}: {a.Value}"));
-        return $"**{entity.Name}** ({entity.Type})\nMentions: {entity.MentionCount}\nAttributes: {attrs}\nRelations: {string.Join("; ", entity.Relations)}";
+        return $"**{entity.Name}** ({entity.Type})\nMentions: {entity.MentionCount}\nVitality: {entity.Vitality}\nLast mentioned: {entity.LastMentioned}\nAttributes: {attrs}\nRelations: {string.Join("; ", entity.Relations)}";
     }
 
     private async Task<string> EntityListAsync(Dictionary<string, object> args)
@@ -474,7 +611,7 @@ public class McpServer : IDisposable
         var entities = await _entityStore.ListAsync(filter);
         if (entities.Count == 0) return "No entities found.";
 
-        var lines = entities.Select(e => $"- **{e.Name}** ({e.Type}, {e.MentionCount}x) - last: {e.LastMentioned}");
+        var lines = entities.Select(e => $"- **{e.Name}** ({e.Type}, {e.MentionCount}x, vitality {e.Vitality}) - last: {e.LastMentioned}");
         return $"## Entities ({entities.Count})\n{string.Join("\n", lines)}";
     }
 
@@ -536,6 +673,7 @@ public class McpServer : IDisposable
             "list" => ToolSkillList(),
             "create" => await ToolSkillCreateAsync(args),
             "delete" => ToolSkillDelete(args),
+            "harvest" => await ToolSkillHarvestAsync(args),
             _ => "Unknown action"
         };
     }
@@ -543,7 +681,13 @@ public class McpServer : IDisposable
     private string ToolSkillList()
     {
         if (_skillManager.LoadedSkills.Count == 0) return "No skills installed.";
-        var lines = _skillManager.LoadedSkills.Select(s => $"- **{s.Name}**: {s.Description}");
+        var lines = _skillManager.LoadedSkills.Select(skill =>
+        {
+            var hookText = skill.Hooks.Count == 0
+                ? string.Empty
+                : $" [hooks: {string.Join(", ", skill.Hooks.Select(hook => hook.ToFrontmatterValue()))}]";
+            return $"- **{skill.Name}**: {skill.Description}{hookText}";
+        });
         return $"## Skills ({_skillManager.LoadedSkills.Count})\n{string.Join("\n", lines)}";
     }
 
@@ -560,14 +704,55 @@ public class McpServer : IDisposable
         var description = descObj.ToString()!;
         var content = contentObj.ToString()!;
 
-        var skillPath = Path.Combine(_workspace, "skills", $"{name}.md");
+        if (name.Contains("..", StringComparison.Ordinal) ||
+            name.IndexOfAny(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar }) >= 0)
+        {
+            return "Error: invalid skill name.";
+        }
+
+        var keywords = ExtractStringList(args, "keywords");
+        var hooks = ExtractStringList(args, "hooks");
+        var filePatterns = ExtractStringList(args, "filePatterns");
+
+        var skillPath = SkillPaths.ResolveSkillFilePath(_workspace, name);
         Directory.CreateDirectory(Path.GetDirectoryName(skillPath)!);
 
-        var skillContent = $"---\ndescription: {description}\n---\n\n{content}";
+        var skillContent = SkillDocumentBuilder.BuildMarkdown(name, description, content, keywords, hooks, filePatterns);
         await File.WriteAllTextAsync(skillPath, skillContent);
 
         _skillManager.LoadSkills();
         return $"Skill '{name}' created.";
+    }
+
+    private async Task<string> ToolSkillHarvestAsync(Dictionary<string, object> args)
+    {
+        var apply = false;
+        if (args.TryGetValue("apply", out var applyObj) && applyObj != null)
+        {
+            apply = ParseBooleanArg(applyObj);
+        }
+
+        var overwrite = false;
+        if (args.TryGetValue("overwrite", out var overwriteObj) && overwriteObj != null)
+        {
+            overwrite = ParseBooleanArg(overwriteObj);
+        }
+
+        var sources = ExtractStringList(args, "sources");
+        var harvester = new SubstrateHarvester(_workspace, SkillPaths.ResolveSkillsDirectory(_workspace));
+        var result = harvester.Harvest(new SubstrateHarvestOptions
+        {
+            Apply = apply,
+            OverwriteExisting = overwrite,
+            Sources = sources
+        });
+
+        if (apply && result.ImportedSkills.Count > 0)
+        {
+            _skillManager.LoadSkills();
+        }
+
+        return result.ToDisplayString();
     }
 
     private string ToolSkillDelete(Dictionary<string, object> args)
@@ -576,13 +761,80 @@ public class McpServer : IDisposable
             return "Error: name parameter required.";
 
         var name = nameObj.ToString()!;
-        var skillPath = Path.Combine(_workspace, "skills", $"{name}.md");
+        var skillPath = SkillPaths.ResolveSkillFilePath(_workspace, name);
+        var legacyPath = SkillPaths.ResolveLegacySkillFilePath(_workspace, name);
 
-        if (!File.Exists(skillPath)) return $"Skill '{name}' does not exist.";
+        if (File.Exists(skillPath))
+        {
+            Directory.Delete(Path.GetDirectoryName(skillPath)!, recursive: true);
+        }
+        else if (File.Exists(legacyPath))
+        {
+            File.Delete(legacyPath);
+        }
+        else
+        {
+            return $"Skill '{name}' does not exist.";
+        }
 
-        File.Delete(skillPath);
         _skillManager.LoadSkills();
         return $"Skill '{name}' deleted.";
+    }
+
+    private string AppendSkillHookContext(string result, SkillHookType hookType, string? targetPath = null)
+    {
+        var hookContext = _skillManager.BuildHookContext(hookType, targetPath);
+        return string.IsNullOrWhiteSpace(hookContext)
+            ? result
+            : $"{result}\n\n{hookContext}";
+    }
+
+    private static List<string> ExtractStringList(Dictionary<string, object> args, string key)
+    {
+        if (!args.TryGetValue(key, out var value) || value == null)
+        {
+            return new List<string>();
+        }
+
+        if (value is JsonElement element)
+        {
+            if (element.ValueKind == JsonValueKind.Array)
+            {
+                return element.EnumerateArray()
+                    .Select(item => item.ToString())
+                    .Where(item => !string.IsNullOrWhiteSpace(item))
+                    .ToList()!;
+            }
+
+            if (element.ValueKind == JsonValueKind.String)
+            {
+                var single = element.GetString();
+                return string.IsNullOrWhiteSpace(single) ? new List<string>() : new List<string> { single };
+            }
+        }
+
+        if (value is IEnumerable<object> enumerable)
+        {
+            return enumerable
+                .Select(item => item?.ToString())
+                .Where(item => !string.IsNullOrWhiteSpace(item))
+                .ToList()!;
+        }
+
+        var fallback = value.ToString();
+        return string.IsNullOrWhiteSpace(fallback) ? new List<string>() : new List<string> { fallback };
+    }
+
+    private static bool ParseBooleanArg(object value)
+    {
+        return value switch
+        {
+            bool boolValue => boolValue,
+            JsonElement { ValueKind: JsonValueKind.True } => true,
+            JsonElement { ValueKind: JsonValueKind.False } => false,
+            JsonElement { ValueKind: JsonValueKind.String } element => bool.TryParse(element.GetString(), out var parsed) && parsed,
+            _ => bool.TryParse(value.ToString(), out var parsed) && parsed
+        };
     }
 
     private string ToolIntrospect(Dictionary<string, object> args)
@@ -622,21 +874,147 @@ public class McpServer : IDisposable
         };
     }
 
-    private string ToolDream()
+    private async Task<string> ToolDreamAsync()
     {
         var today = _memoryStore.ReadToday();
-        if (string.IsNullOrEmpty(today)) return "No today's log available for analysis.";
+        if (string.IsNullOrWhiteSpace(today)) return "No today's log available for analysis.";
 
         var evaluation = _memoryStore.EvaluateDistillation();
-        return $"""
-            ## Dream Analysis
+        var analytics = _analyticsService.GetAnalytics();
+        var trackedTools = _toolUsageTracker.GetStats(TimeSpan.FromDays(3));
+        var entityCount = await _entityStore.GetCountAsync();
+        var openLoops = ExtractDreamOpenLoops(today, 5);
+        var recentDecisions = ExtractDreamRecentDecisions(today, 3);
+        var suggestions = BuildDreamSuggestions(evaluation, trackedTools, analytics, entityCount, openLoops);
 
-            Today's activity log length: {today.Length} characters
-            Distillation recommendation: {(evaluation.ShouldDistill ? $"Needed ({evaluation.Urgency})" : "Not yet needed")}
-            Reason: {evaluation.Reason}
+        var lines = new List<string>
+        {
+            "## Dream Analysis",
+            "",
+            "### State",
+            "",
+            $"- Today's log length: {today.Length} characters",
+            $"- Distillation: {(evaluation.ShouldDistill ? $"Needed ({evaluation.Urgency})" : "Not yet needed")}",
+            $"- Reason: {evaluation.Reason}",
+            $"- Activity summary: {_dailyBriefingService.GenerateOneLineSummary()}",
+            $"- Recent tool focus: {FormatDreamToolSummary(trackedTools, analytics)}",
+            $"- Entities tracked: {entityCount}",
+            ""
+        };
 
-            Purpose: Review today's records, identify patterns and insights, prepare for long-term memory integration.
-            """;
+        if (recentDecisions.Count > 0)
+        {
+            lines.Add("### Recent Decisions");
+            lines.Add("");
+            lines.AddRange(recentDecisions.Select(decision => $"- {decision}"));
+            lines.Add("");
+        }
+
+        if (openLoops.Count > 0)
+        {
+            lines.Add("### Open Loops");
+            lines.Add("");
+            lines.AddRange(openLoops.Select(loop => $"- {loop}"));
+            lines.Add("");
+        }
+
+        lines.Add("### Suggested Next Moves");
+        lines.Add("");
+        lines.AddRange(suggestions.Select((suggestion, index) => $"{index + 1}. {suggestion}"));
+        lines.Add("");
+        lines.Add("Dry-run only: no files modified.");
+
+        return string.Join("\n", lines);
+    }
+
+    private static List<string> ExtractDreamOpenLoops(string log, int take)
+    {
+        var patterns = new[] { "?", "TODO", "todo", "待", "问题", "需要" };
+        return log.Split('\n')
+            .Where(line => line.TrimStart().StartsWith("- [") && patterns.Any(pattern => line.Contains(pattern, StringComparison.OrdinalIgnoreCase)))
+            .Select(line => StripLogPrefix(line).Trim())
+            .Where(line => !string.IsNullOrWhiteSpace(line))
+            .TakeLast(take)
+            .ToList();
+    }
+
+    private static List<string> ExtractDreamRecentDecisions(string log, int take)
+    {
+        var patterns = new[] { "decided", "选择", "确认", "agreed", "决定", "chosen", "confirmed" };
+        return log.Split('\n')
+            .Where(line => line.TrimStart().StartsWith("- [") && patterns.Any(pattern => line.Contains(pattern, StringComparison.OrdinalIgnoreCase)))
+            .Select(line => StripLogPrefix(line).Trim())
+            .Where(line => !string.IsNullOrWhiteSpace(line))
+            .TakeLast(take)
+            .ToList();
+    }
+
+    private static string StripLogPrefix(string line)
+    {
+        return System.Text.RegularExpressions.Regex.Replace(line, @"^- \[\d{1,2}:\d{2}:\d{2}\]\s*", "");
+    }
+
+    private static string FormatDreamToolSummary(ToolUsageStats trackedTools, UsageAnalytics analytics)
+    {
+        var topTracked = trackedTools.MostUsedTools.Take(3).ToList();
+        if (topTracked.Count > 0)
+        {
+            return string.Join(", ", topTracked.Select(tool => $"{tool.Key}({tool.Value})"));
+        }
+
+        var topAnalytics = analytics.GetTopTools(3);
+        if (topAnalytics.Count > 0)
+        {
+            return string.Join(", ", topAnalytics.Select(tool => $"{tool.Key}({tool.Value})"));
+        }
+
+        return "No tool streak detected";
+    }
+
+    private static List<string> BuildDreamSuggestions(
+        DistillationEvaluation evaluation,
+        ToolUsageStats trackedTools,
+        UsageAnalytics analytics,
+        int entityCount,
+        List<string> openLoops)
+    {
+        var suggestions = new List<string>();
+
+        if (evaluation.ShouldDistill)
+        {
+            suggestions.Add($"Distill or archive today's memory because {evaluation.Reason}.");
+        }
+
+        if (openLoops.Count > 0)
+        {
+            suggestions.Add($"Close the highest-friction open loop: {openLoops[0]}");
+        }
+
+        var primaryTool = trackedTools.MostUsedTools.FirstOrDefault();
+        if (!string.IsNullOrWhiteSpace(primaryTool.Key) && primaryTool.Value >= 3)
+        {
+            suggestions.Add($"Recurring use of {primaryTool.Key} suggests a reusable skill, script, or tighter workflow.");
+        }
+        else
+        {
+            var analyticsTool = analytics.GetTopTools(1).FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(analyticsTool.Key) && analyticsTool.Value >= 3)
+            {
+                suggestions.Add($"Recurring use of {analyticsTool.Key} suggests a reusable skill, script, or tighter workflow.");
+            }
+        }
+
+        if (entityCount > 10)
+        {
+            suggestions.Add($"Before the next session, skim the active entity set ({entityCount}) to keep context tight.");
+        }
+
+        if (suggestions.Count == 0)
+        {
+            suggestions.Add("No urgent intervention detected. Continue the current thread and use myclaw_briefing for a compact recap if needed.");
+        }
+
+        return suggestions;
     }
 
     private string ToolImmune()
@@ -683,7 +1061,7 @@ public class McpServer : IDisposable
         return $"Gene repair complete. Restored {restored.Count} core files: {string.Join(", ", restored)}";
     }
 
-    private string ToolNociception(Dictionary<string, object> args)
+    private async Task<string> ToolNociceptionAsync(Dictionary<string, object> args)
     {
         var action = args.TryGetValue("action", out var a) ? a.ToString() : "list";
         var nociceptionPath = Path.Combine(_workspace, "NOCICEPTION.md");
@@ -691,14 +1069,14 @@ public class McpServer : IDisposable
         return action switch
         {
             "list" => File.Exists(nociceptionPath) ? File.ReadAllText(nociceptionPath) : "No pain memories.",
-            "record" => ToolNociceptionRecord(args, nociceptionPath),
+            "record" => await ToolNociceptionRecordAsync(args, nociceptionPath),
             "check" => ToolNociceptionCheck(args, nociceptionPath),
             "clear" => ToolNociceptionClear(nociceptionPath),
             _ => "Unknown action"
         };
     }
 
-    private string ToolNociceptionRecord(Dictionary<string, object> args, string path)
+    private async Task<string> ToolNociceptionRecordAsync(Dictionary<string, object> args, string path)
     {
         if (!args.TryGetValue("stimulus", out var stimulus) || stimulus == null)
             return "Error: stimulus parameter required.";
@@ -717,7 +1095,8 @@ public class McpServer : IDisposable
 
             """;
 
-        File.AppendAllText(path, entry);
+        await File.AppendAllTextAsync(path, entry);
+        await TrySecreteSporeAsync("NOCICEPTION.md", entry);
         return "Pain memory recorded.";
     }
 
@@ -742,6 +1121,41 @@ public class McpServer : IDisposable
             return "Pain memories cleared.";
         }
         return "No pain memories to clear.";
+    }
+
+    private async Task TrySecreteSporeAsync(string filename, string content)
+    {
+        if (_myceliumNetwork == null || string.IsNullOrWhiteSpace(content))
+        {
+            return;
+        }
+
+        var type = filename switch
+        {
+            "TOOLS.md" => "TOOLS",
+            "NOCICEPTION.md" => "NOCICEPTION",
+            _ => null
+        };
+
+        if (type == null)
+        {
+            return;
+        }
+
+        var payload = content.Trim();
+        if (payload.Length > 2000)
+        {
+            payload = payload[..2000] + "\n...[truncated]";
+        }
+
+        try
+        {
+            await _myceliumNetwork.SecreteSporeAsync(type, payload);
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"[MCP] Failed to secrete {type} spore: {ex.Message}");
+        }
     }
 
     private object HandleListResources()

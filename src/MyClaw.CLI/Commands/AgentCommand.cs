@@ -48,7 +48,7 @@ public class AgentCommand : Command
             }
 
             var memoryStore = new MemoryStore(cfg.Agent.Workspace);
-            var skillManager = new SkillManager(cfg.Agent.Workspace);
+            var skillManager = new SkillManager(SkillPaths.ResolveSkillsDirectory(cfg.Agent.Workspace, cfg.Skills.Dir));
             skillManager.LoadSkills();
 
             cfg.Provider.Model = cfg.Provider.Model ?? cfg.Agent.Model;

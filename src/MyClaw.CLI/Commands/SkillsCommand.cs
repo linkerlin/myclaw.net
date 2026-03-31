@@ -17,6 +17,58 @@ public class SkillsCommand : Command
         AddCommand(new SkillsListCommand());
         AddCommand(new SkillsInfoCommand());
         AddCommand(new SkillsCheckCommand());
+        AddCommand(new SkillsHarvestCommand());
+    }
+}
+
+public class SkillsHarvestCommand : Command
+{
+    public SkillsHarvestCommand() : base("harvest", "扫描外部 AI 规则并转换为内部技能")
+    {
+        var applyOption = new Option<bool>(
+            aliases: new[] { "--apply" },
+            description: "实际写入 skills 目录；默认只做 dry-run");
+        var overwriteOption = new Option<bool>(
+            aliases: new[] { "--overwrite" },
+            description: "允许覆盖已存在的导入目标");
+        var sourcesOption = new Option<string?>(
+            aliases: new[] { "--sources" },
+            description: "逗号分隔的来源列表：copilot,cursor,claude,windsurf");
+        var jsonOption = new Option<bool>(
+            aliases: new[] { "--json" },
+            description: "以 JSON 格式输出");
+
+        AddOption(applyOption);
+        AddOption(overwriteOption);
+        AddOption(sourcesOption);
+        AddOption(jsonOption);
+
+        this.SetHandler((bool apply, bool overwrite, string? sources, bool json) =>
+        {
+            var cfg = ConfigurationLoader.Load();
+            var workspace = cfg.Agent.Workspace;
+            var skillDir = SkillsCommandHelpers.GetSkillsDir(cfg);
+            var harvester = new SubstrateHarvester(workspace, skillDir);
+            var result = harvester.Harvest(new SubstrateHarvestOptions
+            {
+                Apply = apply,
+                OverwriteExisting = overwrite,
+                Sources = string.IsNullOrWhiteSpace(sources)
+                    ? new List<string>()
+                    : sources.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList()
+            });
+
+            if (json)
+            {
+                Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(result, new System.Text.Json.JsonSerializerOptions
+                {
+                    WriteIndented = true
+                }));
+                return;
+            }
+
+            AnsiConsole.WriteLine(result.ToDisplayString());
+        }, applyOption, overwriteOption, sourcesOption, jsonOption);
     }
 }
 
@@ -49,7 +101,8 @@ public class SkillsListCommand : Command
                 {
                     name = s.Name,
                     description = string.IsNullOrEmpty(s.Description) ? "(无描述)" : s.Description,
-                    keywords = s.Keywords
+                    keywords = s.Keywords,
+                    hooks = s.Hooks.Select(hook => hook.ToFrontmatterValue())
                 });
 
                 var result = System.Text.Json.JsonSerializer.Serialize(new
@@ -279,8 +332,6 @@ internal static class SkillsCommandHelpers
 {
     public static string GetSkillsDir(MyClawConfiguration cfg)
     {
-        return string.IsNullOrEmpty(cfg.Skills.Dir)
-            ? Path.Combine(cfg.Agent.Workspace, "skills")
-            : cfg.Skills.Dir;
+        return SkillPaths.ResolveSkillsDirectory(cfg.Agent.Workspace, cfg.Skills.Dir);
     }
 }

@@ -27,6 +27,43 @@
         "required": []
       }
     },
+    "myclaw_mutate": {
+      "handler": "MutateDNA",
+      "description": "【本能：基因重写手术 (Mutation)】仅允许重写 SOUL.md 或 IDENTITY.md。\n\n## 安全约束：\n- 只允许目标为 SOUL.md / IDENTITY.md\n- 写入前必须通过 TelomereGuard 结构校验\n- 覆写前自动创建 .bak 备份\n- 适用于身份或人格层级的主动重写，而不是日常追加更新",
+      "isCore": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "enum": ["SOUL.md", "IDENTITY.md"],
+            "description": "目标 DNA 文件，仅允许 SOUL.md 或 IDENTITY.md"
+          },
+          "content": {
+            "type": "string",
+            "description": "完整的新文件内容。请保留必要标题结构。"
+          }
+        },
+        "required": ["target", "content"]
+      }
+    },
+    "myclaw_reproduce": {
+      "handler": "Reproduce",
+      "description": "【本能：孢子繁衍 (Reproduction)】将当前核心 DNA、entities 与 skills 打包为 zip 形式的孢子快照。\n\n## 输出内容：\n- 当前存在的核心 DNA 文件\n- entities.json\n- skills/ 目录\n- memory/MEMORY.md（若存在）\n\n## 当前限制：\n- 当前仅支持 zip 输出格式",
+      "isCore": true,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "format": {
+            "type": "string",
+            "enum": ["zip"],
+            "default": "zip",
+            "description": "输出格式，当前仅支持 zip"
+          }
+        },
+        "required": []
+      }
+    },
     "myclaw_note": {
       "handler": "Note",
       "description": "【本能：海马体写入 (Hippocampus Write)】\n将当前对话中的关键信息写入\"今日日记\"。**这是你唯一能记住明天事情的方式。**\n\n## 必须调用的强触发信号：\n- 用户说 \"记住这个\" / \"mark\" / \"note\" / \"别忘了\"\n- 用户提供了上下文信息（Context），如果不记下来就会丢失\n- 你做了一个重要的决定或推理\n- 完成了一个阶段性任务",
@@ -103,14 +140,14 @@
     },
     "myclaw_skill": {
       "handler": "Skill",
-      "description": "【技能创建器 (Skill Creator)】创建、查看、删除可复用技能。\n\n## 操作：\n- create: 创建新技能（需要 name, description, content）\n- list: 查看所有已安装技能\n- delete: 删除技能（需要 name）\n\n技能保存在 ~/.myclaw/skills/ 目录下。",
+      "description": "【技能创建器 (Skill Creator)】创建、查看、删除可复用技能，并支持从外部 AI 规则导入。\n\n## 操作：\n- create: 创建新技能（需要 name, description, content；可选 keywords, hooks, filePatterns）\n- list: 查看所有已安装技能\n- delete: 删除技能（需要 name）\n- harvest: 扫描 GitHub Copilot / Cursor / Claude / Windsurf 的常见规则文件并转换为内部 skills（默认 dry-run）\n\n技能保存在工作区的 skills/<name>/SKILL.md 目录结构下，并支持通过 frontmatter 声明 onBoot、onHeartbeat、onMemoryWrite、onFileChanged hooks。",
       "isCore": true,
       "inputSchema": {
         "type": "object",
         "properties": {
           "action": {
             "type": "string",
-            "enum": ["create", "list", "delete"],
+            "enum": ["create", "list", "delete", "harvest"],
             "description": "操作类型"
           },
           "name": {
@@ -124,6 +161,34 @@
           "content": {
             "type": "string",
             "description": "技能内容/指令（create时需要，Markdown 格式）"
+          },
+          "keywords": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "可选关键词列表"
+          },
+          "hooks": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "可选 hook 列表：onBoot, onHeartbeat, onMemoryWrite, onFileChanged"
+          },
+          "filePatterns": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "onFileChanged 使用的可选文件匹配模式"
+          },
+          "apply": {
+            "type": "boolean",
+            "description": "harvest 时是否实际写入 skills 目录；默认 false 表示 dry-run"
+          },
+          "overwrite": {
+            "type": "boolean",
+            "description": "harvest 时是否允许覆盖已有技能"
+          },
+          "sources": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "harvest 时要扫描的来源列表：copilot, cursor, claude, windsurf"
           }
         },
         "required": ["action"]

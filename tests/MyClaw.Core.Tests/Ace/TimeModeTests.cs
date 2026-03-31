@@ -5,6 +5,24 @@ namespace MyClaw.Core.Tests.Ace;
 public class TimeModeTests
 {
     [Theory]
+    [InlineData(6, TimeMode.Morning)]
+    [InlineData(8, TimeMode.Morning)]
+    [InlineData(9, TimeMode.Work)]
+    [InlineData(13, TimeMode.Break)]
+    [InlineData(15, TimeMode.Work)]
+    [InlineData(19, TimeMode.Evening)]
+    [InlineData(23, TimeMode.Night)]
+    [InlineData(3, TimeMode.Night)]
+    public void GetCurrentMode_WithSpecificTime_ShouldReturnExpectedMode(int hour, TimeMode expectedMode)
+    {
+        var now = new DateTime(2026, 1, 1, hour, 0, 0);
+
+        var mode = TimeModeManager.GetCurrentMode(now);
+
+        Assert.Equal(expectedMode, mode);
+    }
+
+    [Theory]
     [InlineData(TimeMode.Morning)]
     [InlineData(TimeMode.Work)]
     [InlineData(TimeMode.Break)]

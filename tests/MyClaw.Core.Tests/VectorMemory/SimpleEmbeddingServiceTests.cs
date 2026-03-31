@@ -30,7 +30,7 @@ public class SimpleEmbeddingServiceTests
         var embedding = await service.EmbedAsync("This is a test sentence.");
 
         // 至少有一些非零值
-        Assert.True(embedding.Any(v => v != 0));
+        Assert.Contains(embedding, value => value != 0);
     }
 
     [Fact]
@@ -127,7 +127,7 @@ public class SimpleEmbeddingServiceTests
         var embedding = await service.EmbedAsync("这是一个中文测试");
 
         Assert.Equal(128, embedding.Length);
-        Assert.True(embedding.Any(v => v != 0));
+        Assert.Contains(embedding, value => value != 0);
     }
 
     [Fact]
@@ -155,16 +155,16 @@ public class SimpleEmbeddingServiceTests
     }
 
     [Fact]
-    public void ClearCache_ShouldClearCachedEmbeddings()
+    public async Task ClearCache_ShouldClearCachedEmbeddings()
     {
         var service = new SimpleEmbeddingService(128);
 
-        service.EmbedAsync("Test").Wait();
+        await service.EmbedAsync("Test");
         service.ClearCache();
 
         // 清除后再次获取应该是新计算
         // 这个测试主要是确保方法不会抛出异常
-        service.EmbedAsync("Test").Wait();
+        await service.EmbedAsync("Test");
     }
 
     private static double CosineSimilarity(float[] v1, float[] v2)

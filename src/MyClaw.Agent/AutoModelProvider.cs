@@ -234,6 +234,7 @@ public class FallbackAgent
     private readonly MyClawConfiguration _config;
     private readonly MemoryStore _memoryStore;
     private readonly SkillManager? _skillManager;
+    private readonly AgentPromptContextBuilder _promptContextBuilder;
     private EnhancedReActAgent? _agent;
     private IModel? _currentModel;
 
@@ -246,6 +247,7 @@ public class FallbackAgent
         _memoryStore = memoryStore;
         _skillManager = skillManager;
         _fallbackProvider = new AutoModelProvider(config);
+        _promptContextBuilder = new AgentPromptContextBuilder(config, memoryStore);
     }
 
     /// <summary>
@@ -339,7 +341,15 @@ public class FallbackAgent
 
     private void BuildAgent(IModel model)
     {
-        var systemPrompt = BuildSystemPrompt();
+        var systemPrompt = _promptContextBuilder.BuildSystemPrompt(CurrentProvider);
+        if (_skillManager != null)
+        {
+            var hookContext = _skillManager.BuildHookContext(SkillHookType.Boot);
+            if (!string.IsNullOrWhiteSpace(hookContext))
+            {
+                systemPrompt = $"{systemPrompt}\n\n{hookContext}";
+            }
+        }
 
         var builder = EnhancedReActAgent.Builder()
             .Name("MyClaw")
@@ -348,7 +358,7 @@ public class FallbackAgent
             .MaxIterations(_config.Agent.MaxToolIterations)
             .Verbose(_config.Agent.Verbose);
 
-        builder.AddTool(new MemoryTool(_memoryStore));
+        builder.AddTool(new MemoryTool(_memoryStore, _skillManager));
 
         if (_skillManager != null)
         {
@@ -359,51 +369,6 @@ public class FallbackAgent
         }
 
         _agent = builder.Build();
-    }
-
-    private string BuildSystemPrompt()
-    {
-        var parts = new List<string>();
-
-        var workspace = _config.Agent.Workspace;
-
-        var agentsPath = Path.Combine(workspace, "AGENTS.md");
-        if (File.Exists(agentsPath))
-        {
-            parts.Add(File.ReadAllText(agentsPath));
-        }
-
-        var soulPath = Path.Combine(workspace, "SOUL.md");
-        if (File.Exists(soulPath))
-        {
-            parts.Add(File.ReadAllText(soulPath));
-        }
-
-        var heartbeatPath = Path.Combine(workspace, "HEARTBEAT.md");
-        if (File.Exists(heartbeatPath))
-        {
-            parts.Add("## 心跳任务\n" + File.ReadAllText(heartbeatPath));
-        }
-
-        var memoryContext = _memoryStore.GetMemoryContext();
-        if (!string.IsNullOrEmpty(memoryContext))
-        {
-            parts.Add("## 记忆上下文\n" + memoryContext);
-        }
-
-        parts.Add($@"
-你是 MyClaw，一个个人 AI 助手。
-当前使用的模型提供者: {CurrentProvider}
-
-你可以使用以下工具来完成任务：
-- Skills: 各种专业领域的技能助手
-- Calculator: 数学计算
-- GetTime: 获取当前时间
-
-请用中文或用户使用的语言回复。
-");
-
-        return string.Join("\n\n", parts);
     }
 
     private static string? GetMsgTextContent(object response)

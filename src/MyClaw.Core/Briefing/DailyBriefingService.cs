@@ -241,7 +241,7 @@ public class DailyBriefingService
 
         foreach (var e in recentEntities)
         {
-            lines.Add($"- **{e.Name}** ({e.Type}, {e.MentionCount}x) — last: {e.LastMentioned}");
+            lines.Add($"- **{e.Name}** ({e.Type}, {e.MentionCount}x, vitality {e.Vitality}) — last: {e.LastMentioned}");
         }
         lines.Add("");
 

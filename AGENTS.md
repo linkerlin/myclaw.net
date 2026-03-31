@@ -244,8 +244,8 @@ myclaw_reproduce
 
 ## 📚 参考文档
 
-- [改进方案和计划-v4.md](./改进方案和计划-v4.md) - 完整对比分析和实施计划
-- [TODO-改进清单-v2.md](./TODO-改进清单-v2.md) - 具体行动项
+- [改进方案和计划.md](./改进方案和计划.md) - 当前阶段判断与实施方向
+- [TODO.md](./TODO.md) - 当前实施清单与进度状态
 - [MiniClaw AGENTS.md](https://github.com/8421bit/MiniClaw/blob/main/templates/AGENTS.md) - 原版参考
 
 ---

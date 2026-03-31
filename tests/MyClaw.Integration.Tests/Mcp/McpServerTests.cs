@@ -1,4 +1,6 @@
 using System.Text.Json;
+using System.IO.Compression;
+using MyClaw.Core.Dna;
 
 namespace MyClaw.Integration.Tests.Mcp;
 
@@ -83,6 +85,8 @@ public class McpServerTests : IClassFixture<McpTestFixture>, IAsyncLifetime
         Assert.Contains("myclaw_entity", toolNames);
         Assert.Contains("myclaw_exec", toolNames);
         Assert.Contains("myclaw_status", toolNames);
+        Assert.Contains("myclaw_mutate", toolNames);
+        Assert.Contains("myclaw_reproduce", toolNames);
     }
 
     [Fact]
@@ -114,7 +118,7 @@ public class McpServerTests : IClassFixture<McpTestFixture>, IAsyncLifetime
         var response = await CallToolAsync("myclaw_update", new
         {
             filename = "SOUL.md",
-            content = "# Test Soul\n\nThis is a test soul content."
+            content = "# Test Soul\n\n## Traits\n- This is a test soul content."
         });
 
         var text = GetToolResultText(response);
@@ -136,12 +140,164 @@ public class McpServerTests : IClassFixture<McpTestFixture>, IAsyncLifetime
         await CallToolAsync("myclaw_update", new
         {
             filename = "AGENTS.md",
-            content = "New content"
+            content = "# Agents\n\n## Workflow\nNew content"
         });
 
         Assert.True(File.Exists(filePath + ".bak"));
         var backup = await File.ReadAllTextAsync(filePath + ".bak");
         Assert.Equal("Original content", backup);
+    }
+
+    [Fact]
+    public async Task Update_InvalidCoreDna_ShouldReturnTelomereGuardErrorAndKeepOriginalContent()
+    {
+        var filePath = Path.Combine(_fixture.WorkspacePath, "USER.md");
+        const string original = "## User\n- original";
+        await File.WriteAllTextAsync(filePath, original);
+
+        var response = await CallToolAsync("myclaw_update", new
+        {
+            filename = "USER.md",
+            content = "user profile without markdown structure"
+        });
+
+        var text = GetToolResultText(response);
+        Assert.Contains("Telomere Guard rejected mutation", text);
+        Assert.Contains("USER.md", text);
+
+        var current = await File.ReadAllTextAsync(filePath);
+        Assert.Equal(original, current);
+    }
+
+    [Fact]
+    public async Task Update_ShouldReturnPurposeMapMirrorForCoreDna()
+    {
+        var response = await CallToolAsync("myclaw_update", new
+        {
+            filename = "CONCEPTS.md",
+            content = "## Concepts\n- prompt builder"
+        });
+
+        var text = GetToolResultText(response);
+        Assert.Contains("Updated CONCEPTS.md.", text);
+        Assert.Contains("📝 Purpose:", text);
+        Assert.Contains(PurposeMap.GetPurpose("CONCEPTS.md"), text);
+    }
+
+    [Fact]
+    public async Task Update_ToolsFile_ShouldSecreteMyceliumSpore()
+    {
+        var myceliumDir = Path.Combine(_fixture.WorkspacePath, "mycelium");
+        var before = Directory.Exists(myceliumDir)
+            ? Directory.GetFiles(myceliumDir, "*.json").Length
+            : 0;
+
+        await CallToolAsync("myclaw_update", new
+        {
+            filename = "TOOLS.md",
+            content = "## Tools\n- Shared tool immunity"
+        });
+
+        var files = Directory.GetFiles(myceliumDir, "*.json");
+        Assert.True(files.Length > before);
+
+        var payload = await File.ReadAllTextAsync(files.OrderByDescending(File.GetCreationTimeUtc).First());
+        Assert.Contains("\"Type\": \"TOOLS\"", payload, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Shared tool immunity", payload);
+    }
+
+    #endregion
+
+    #region myclaw_mutate Tests
+
+    [Fact]
+    public async Task Mutate_ShouldRejectNonRewritableDnaTarget()
+    {
+        var response = await CallToolAsync("myclaw_mutate", new
+        {
+            target = "USER.md",
+            content = "## Preferences\n- keep calm"
+        });
+
+        var text = GetToolResultText(response);
+        Assert.Contains("Mutation rejected", text);
+        Assert.Contains("SOUL.md and IDENTITY.md", text);
+    }
+
+    [Fact]
+    public async Task Mutate_ShouldBackupAndRewriteSoul()
+    {
+        var filePath = Path.Combine(_fixture.WorkspacePath, "SOUL.md");
+        const string original = "## Traits\n- original soul";
+        await File.WriteAllTextAsync(filePath, original);
+
+        var response = await CallToolAsync("myclaw_mutate", new
+        {
+            target = "SOUL.md",
+            content = "## Traits\n- rewritten soul"
+        });
+
+        var text = GetToolResultText(response);
+        Assert.Contains("Mutated SOUL.md.", text);
+        Assert.Contains("Backup: SOUL.md.bak", text);
+        Assert.Contains(PurposeMap.GetPurpose("SOUL.md"), text);
+
+        var current = await File.ReadAllTextAsync(filePath);
+        var backup = await File.ReadAllTextAsync(filePath + ".bak");
+        Assert.Contains("rewritten soul", current);
+        Assert.Equal(original, backup);
+    }
+
+    [Fact]
+    public async Task Mutate_ShouldRejectInvalidStructure()
+    {
+        var filePath = Path.Combine(_fixture.WorkspacePath, "IDENTITY.md");
+        await File.WriteAllTextAsync(filePath, "# Identity\n\n## Role\n- original");
+
+        var response = await CallToolAsync("myclaw_mutate", new
+        {
+            target = "IDENTITY.md",
+            content = "identity without headings"
+        });
+
+        var text = GetToolResultText(response);
+        Assert.Contains("Telomere Guard rejected mutation", text);
+
+        var current = await File.ReadAllTextAsync(filePath);
+        Assert.Contains("original", current);
+    }
+
+    #endregion
+
+    #region myclaw_reproduce Tests
+
+    [Fact]
+    public async Task Reproduce_ShouldCreateZipSporeWithCoreDnaEntitiesAndSkills()
+    {
+        await File.WriteAllTextAsync(Path.Combine(_fixture.WorkspacePath, "SOUL.md"), "## Traits\n- portable soul");
+        await File.WriteAllTextAsync(Path.Combine(_fixture.WorkspacePath, "IDENTITY.md"), "# Identity\n\n## Role\n- portable identity");
+        await File.WriteAllTextAsync(Path.Combine(_fixture.WorkspacePath, "entities.json"), "{\"entities\":[]}");
+        await File.WriteAllTextAsync(Path.Combine(_fixture.WorkspacePath, "memory", "MEMORY.md"), "long term memory");
+        await File.WriteAllTextAsync(Path.Combine(_fixture.WorkspacePath, "skills", "demo.md"), "demo skill");
+
+        var response = await CallToolAsync("myclaw_reproduce", new { });
+        var text = GetToolResultText(response);
+
+        Assert.Contains("Reproduction complete.", text);
+
+        var sporesDir = Path.Combine(_fixture.WorkspacePath, "spores");
+        var archivePath = Directory.GetFiles(sporesDir, "*.spore.zip").Single();
+        Assert.True(File.Exists(archivePath));
+
+        using var archive = ZipFile.OpenRead(archivePath);
+        var entries = archive.Entries.Select(entry => entry.FullName).ToList();
+
+        Assert.Contains("SOUL.md", entries);
+        Assert.Contains("IDENTITY.md", entries);
+        Assert.Contains("entities.json", entries);
+        Assert.Contains("memory/MEMORY.md", entries);
+        Assert.Contains("skills/demo.md", entries);
+        Assert.Contains("manifest.json", entries);
     }
 
     #endregion
@@ -173,6 +329,30 @@ public class McpServerTests : IClassFixture<McpTestFixture>, IAsyncLifetime
         Assert.Contains("Second note", text);
     }
 
+    [Fact]
+    public async Task Nociception_Record_ShouldSecreteMyceliumSpore()
+    {
+        var myceliumDir = Path.Combine(_fixture.WorkspacePath, "mycelium");
+        var before = Directory.Exists(myceliumDir)
+            ? Directory.GetFiles(myceliumDir, "*.json").Length
+            : 0;
+
+        await CallToolAsync("myclaw_nociception", new
+        {
+            action = "record",
+            stimulus = "overwrite prompt",
+            harm = "lost context",
+            strategy = "preserve builder"
+        });
+
+        var files = Directory.GetFiles(myceliumDir, "*.json");
+        Assert.True(files.Length > before);
+
+        var payload = await File.ReadAllTextAsync(files.OrderByDescending(File.GetCreationTimeUtc).First());
+        Assert.Contains("\"Type\": \"NOCICEPTION\"", payload, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("overwrite prompt", payload);
+    }
+
     #endregion
 
     #region myclaw_read Tests
@@ -189,8 +369,8 @@ public class McpServerTests : IClassFixture<McpTestFixture>, IAsyncLifetime
     [Fact]
     public async Task Read_ShouldIncludeAllDnaFiles()
     {
-        await CallToolAsync("myclaw_update", new { filename = "SOUL.md", content = "Soul content" });
-        await CallToolAsync("myclaw_update", new { filename = "USER.md", content = "User content" });
+        await CallToolAsync("myclaw_update", new { filename = "SOUL.md", content = "## Traits\n- Soul content" });
+        await CallToolAsync("myclaw_update", new { filename = "USER.md", content = "## Preferences\n- User content" });
         
         var response = await CallToolAsync("myclaw_read", new { mode = "full" });
         var text = GetToolResultText(response);
@@ -243,6 +423,7 @@ public class McpServerTests : IClassFixture<McpTestFixture>, IAsyncLifetime
         var text = GetToolResultText(response);
         Assert.Contains("TestProject", text);
         Assert.Contains("Project", text);
+        Assert.Contains("vitality 100", text);
     }
 
     [Fact]
@@ -265,6 +446,7 @@ public class McpServerTests : IClassFixture<McpTestFixture>, IAsyncLifetime
         var text = GetToolResultText(response);
         Assert.Contains("QueryTest", text);
         Assert.Contains("Concept", text);
+        Assert.Contains("Vitality: 100", text);
     }
 
     [Fact]
@@ -290,6 +472,7 @@ public class McpServerTests : IClassFixture<McpTestFixture>, IAsyncLifetime
         var text = GetToolResultText(response);
         
         Assert.Contains("Entities", text);
+        Assert.Contains("vitality 100", text);
     }
 
     [Fact]
@@ -370,7 +553,7 @@ public class McpServerTests : IClassFixture<McpTestFixture>, IAsyncLifetime
     [Fact]
     public async Task ResourcesRead_Context_ShouldReturnContent()
     {
-        await CallToolAsync("myclaw_update", new { filename = "SOUL.md", content = "Context test" });
+        await CallToolAsync("myclaw_update", new { filename = "SOUL.md", content = "## Traits\n- Context test" });
         
         var response = await _fixture.SendRequestAsync("resources/read", new { uri = "myclaw://context" });
         

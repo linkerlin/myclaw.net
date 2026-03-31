@@ -99,6 +99,21 @@ public class AnalyticsServiceTests : IDisposable
     }
 
     [Fact]
+    public void TrackBoredomExecution_SetsTimestampAndPersists()
+    {
+        var executedAt = new DateTime(2026, 3, 31, 10, 0, 0, DateTimeKind.Utc);
+
+        _service.TrackBoredomExecution(executedAt);
+
+        var analytics = _service.GetAnalytics();
+
+        Assert.Equal(executedAt.ToString("O"), analytics.LastBoredomExecution);
+
+        var reloaded = new AnalyticsService(_tempDir).GetAnalytics();
+        Assert.Equal(executedAt.ToString("O"), reloaded.LastBoredomExecution);
+    }
+
+    [Fact]
     public void GetTopTools_ReturnsTopToolsOrdered()
     {
         _service.TrackToolCall("tool_a"); // 1

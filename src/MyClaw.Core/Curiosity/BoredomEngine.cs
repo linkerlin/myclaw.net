@@ -2,6 +2,7 @@ namespace MyClaw.Core.Curiosity;
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -79,9 +80,9 @@ public class BoredomEngine
     public async Task<BoredomResult> CheckAndExecuteAsync()
     {
         var analytics = await _getAnalytics();
-        var inactiveMins = string.IsNullOrEmpty(analytics.LastActivity)
-            ? 999
-            : (DateTime.UtcNow - DateTime.Parse(analytics.LastActivity)).TotalMinutes;
+        var inactiveMins = TryGetUtcTimestamp(analytics.LastActivity) is { } lastActivity
+            ? (DateTime.UtcNow - lastActivity).TotalMinutes
+            : 999;
 
         // 检查是否达到无聊阈值
         if (inactiveMins <= InactivityThresholdMinutes)
@@ -91,8 +92,17 @@ public class BoredomEngine
             return BoredomResult.Skipped($"Not bored yet ({inactiveMins:F0} min <= {InactivityThresholdMinutes} min)");
         }
 
-        // 检查冷却期 - 使用 LastBoredomExecution 如果存在
-        // 简化版本：跳过冷却期检查
+        // 检查冷却期
+        if (TryGetUtcTimestamp(analytics.LastBoredomExecution) is { } lastBoredomExecution)
+        {
+            var hoursSinceLastExecution = (DateTime.UtcNow - lastBoredomExecution).TotalHours;
+            if (hoursSinceLastExecution < CooldownHours)
+            {
+                _logger?.LogDebug("Boredom engine cooling down: {Hours:F1}h < {CooldownHours}h",
+                    hoursSinceLastExecution, CooldownHours);
+                return BoredomResult.Skipped($"Recently executed ({hoursSinceLastExecution:F1}h < {CooldownHours}h)");
+            }
+        }
         
         return await ExecuteBoredomAsync();
     }
@@ -223,13 +233,28 @@ public class BoredomEngine
         try
         {
             var analytics = await _getAnalytics();
-            // 简化版本：不更新 LastBoredomExecution
+            analytics.LastBoredomExecution = DateTime.UtcNow.ToString("O");
             await _saveAnalytics(analytics);
         }
         catch (Exception ex)
         {
             _logger?.LogWarning(ex, "Failed to update analytics after boredom execution");
         }
+    }
+
+    private static DateTime? TryGetUtcTimestamp(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        if (!DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var parsed))
+        {
+            return null;
+        }
+
+        return parsed.Kind == DateTimeKind.Utc ? parsed : parsed.ToUniversalTime();
     }
 }
 

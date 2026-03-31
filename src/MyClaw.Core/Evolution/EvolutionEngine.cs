@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using MyClaw.Core.Analytics;
 using MyClaw.Core.Epigenetics;
 using MyClaw.Core.Ribosome;
 
@@ -39,8 +40,14 @@ public class EvolutionEngine
     private readonly MethylationManager? _methylationManager;
     private readonly EvolutionHistory? _evolutionHistory;
     private readonly RibosomePruner? _ribosomePruner;
+    private readonly AnalyticsService? _analyticsService;
 
-    public EvolutionEngine(string myclawDir, MethylationManager? methylationManager = null, EvolutionHistory? evolutionHistory = null, RibosomePruner? ribosomePruner = null)
+    public EvolutionEngine(
+        string myclawDir,
+        MethylationManager? methylationManager = null,
+        EvolutionHistory? evolutionHistory = null,
+        RibosomePruner? ribosomePruner = null,
+        AnalyticsService? analyticsService = null)
     {
         _myclawDir = myclawDir;
         _stateFile = Path.Combine(myclawDir, "observer-state.json");
@@ -48,6 +55,7 @@ public class EvolutionEngine
         _methylationManager = methylationManager;
         _evolutionHistory = evolutionHistory ?? new EvolutionHistory(myclawDir);
         _ribosomePruner = ribosomePruner;
+        _analyticsService = analyticsService;
     }
 
     /// <summary>
@@ -366,9 +374,13 @@ public class EvolutionEngine
         {
             try
             {
-                // 简化版本：传入 0 次工具调用，实际使用时需要从 AnalyticsService 获取
-                var pruneResult = await _ribosomePruner.PruneAsync(state.TotalEvolutions, new Dictionary<string, int>());
-                // 日志由 RibosomePruner 内部记录
+                if (_analyticsService != null)
+                {
+                    var analytics = _analyticsService.GetAnalytics();
+                    await _ribosomePruner.PruneAsync(
+                        analytics.BootCount,
+                        new Dictionary<string, int>(analytics.ToolCalls));
+                }
             }
             catch (Exception ex)
             {

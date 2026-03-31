@@ -1,5 +1,8 @@
 using MyClaw.Core.Evolution;
+using MyClaw.Core.Analytics;
 using MyClaw.Core.Epigenetics;
+using MyClaw.Core.Ribosome;
+using System.Text.Json;
 
 namespace MyClaw.Core.Tests.Evolution;
 
@@ -292,6 +295,64 @@ public class EvolutionEngineTests : IDisposable
 
         // 验证流程完成，甲基化集成不抛异常
         Assert.NotNull(result);
+    }
+
+    [Fact]
+    public async Task TriggerEvolutionAsync_ShouldUseAnalyticsForRibosomePruning()
+    {
+        await CreateMemoryFileWithStrongPatterns();
+
+        var ribosome = new RibosomeDefinition
+        {
+            Tools = new List<ToolDefinition>
+            {
+                new() { Name = "myclaw_exec", Description = "immortal", Handler = "Exec" },
+                new() { Name = "used_tool", Description = "used", Handler = "Used" },
+                new() { Name = "unused_tool", Description = "unused", Handler = "Unused" }
+            }
+        };
+
+        var ribosomeJson = JsonSerializer.Serialize(ribosome, new JsonSerializerOptions
+        {
+            WriteIndented = true,
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        });
+        await File.WriteAllTextAsync(Path.Combine(_tempDir, "RIBOSOME.json"), ribosomeJson);
+
+        var analyticsService = new AnalyticsService(_tempDir);
+        for (int i = 0; i < 60; i++)
+        {
+            analyticsService.TrackBoot(100);
+        }
+        analyticsService.TrackToolCall("used_tool");
+
+        var engine = new EvolutionEngine(
+            _tempDir,
+            ribosomePruner: new RibosomePruner(_tempDir),
+            analyticsService: analyticsService);
+
+        await engine.AnalyzePatternsAsync();
+        var result = await engine.TriggerEvolutionAsync();
+
+        Assert.NotNull(result);
+
+        var savedJson = await File.ReadAllTextAsync(Path.Combine(_tempDir, "RIBOSOME.json"));
+        var saved = JsonSerializer.Deserialize<RibosomeDefinition>(savedJson, new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true
+        });
+
+        Assert.NotNull(saved);
+        Assert.Contains(saved.Tools, tool => tool.Name == "myclaw_exec");
+        Assert.Contains(saved.Tools, tool => tool.Name == "used_tool");
+        Assert.DoesNotContain(saved.Tools, tool => tool.Name == "unused_tool");
+
+        var heartbeatPath = Path.Combine(_tempDir, "HEARTBEAT.md");
+        Assert.True(File.Exists(heartbeatPath));
+
+        var heartbeat = await File.ReadAllTextAsync(heartbeatPath);
+        Assert.Contains("60次心跳", heartbeat);
+        Assert.Contains("unused_tool", heartbeat);
     }
 
     #endregion

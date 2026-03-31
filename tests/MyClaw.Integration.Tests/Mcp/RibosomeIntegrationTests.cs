@@ -99,8 +99,83 @@ public class RibosomeIntegrationTests : IClassFixture<McpTestFixture>, IAsyncLif
         Assert.Contains("created", text);
 
         // Verify file was created
-        var skillPath = Path.Combine(_fixture.WorkspacePath, "skills", "test_skill.md");
+        var skillPath = Path.Combine(_fixture.WorkspacePath, "skills", "test_skill", "SKILL.md");
         Assert.True(File.Exists(skillPath));
+        var skillMarkdown = await File.ReadAllTextAsync(skillPath);
+        Assert.Contains("name: test_skill", skillMarkdown);
+    }
+
+    [Fact]
+    public async Task Skill_CreateWithMemoryHook_AndNote_ShouldTriggerHookContext()
+    {
+        await CallToolAsync("myclaw_skill", new
+        {
+            action = "create",
+            name = "memory_guard",
+            description = "Memory write guard",
+            content = "# Memory Guard\n\nUse concise memory entries.",
+            hooks = new[] { "onMemoryWrite" }
+        });
+
+        var response = await CallToolAsync("myclaw_note", new { text = "Remember this" });
+        var text = GetToolResultText(response);
+
+        Assert.Contains("Recorded to today's log.", text);
+        Assert.Contains("## SKILL HOOKS (onMemoryWrite)", text);
+        Assert.Contains("Use concise memory entries.", text);
+    }
+
+    [Fact]
+    public async Task Skill_CreateWithFileHook_AndUpdate_ShouldTriggerHookContext()
+    {
+        await CallToolAsync("myclaw_skill", new
+        {
+            action = "create",
+            name = "dna_guard",
+            description = "DNA file guard",
+            content = "# DNA Guard\n\nKeep telomere markers intact.",
+            hooks = new[] { "onFileChanged" },
+            filePatterns = new[] { "SOUL.md" }
+        });
+
+        var response = await CallToolAsync("myclaw_update", new
+        {
+            filename = "SOUL.md",
+            content = "## Traits\n- stable"
+        });
+
+        var text = GetToolResultText(response);
+        Assert.Contains("Updated SOUL.md.", text);
+        Assert.Contains("## SKILL HOOKS (onFileChanged)", text);
+        Assert.Contains("Keep telomere markers intact.", text);
+    }
+
+    [Fact]
+    public async Task Skill_HarvestApply_ShouldImportKnownExternalRules()
+    {
+        Directory.CreateDirectory(Path.Combine(_fixture.WorkspacePath, ".github"));
+        await File.WriteAllTextAsync(
+            Path.Combine(_fixture.WorkspacePath, ".github", "copilot-instructions.md"),
+            "# Copilot\n\nPrefer minimal patches and repository-safe edits.");
+
+        var response = await CallToolAsync("myclaw_skill", new
+        {
+            action = "harvest",
+            apply = true,
+            sources = new[] { "copilot" }
+        });
+
+        var text = GetToolResultText(response);
+        Assert.Contains("Substrate Harvest", text);
+        Assert.Contains("Imported: 1", text);
+
+        var skillFiles = Directory.GetFiles(Path.Combine(_fixture.WorkspacePath, "skills"), "SKILL.md", SearchOption.AllDirectories);
+        Assert.Single(skillFiles);
+
+        var imported = await File.ReadAllTextAsync(skillFiles[0]);
+        Assert.Contains("managedBy: substrate-harvest", imported);
+        Assert.Contains("sourceTool: copilot", imported);
+        Assert.Contains("Prefer minimal patches", imported);
     }
 
     [Fact]
@@ -185,6 +260,26 @@ public class RibosomeIntegrationTests : IClassFixture<McpTestFixture>, IAsyncLif
         var text = GetToolResultText(response);
 
         Assert.Contains("Dream Analysis", text);
+        Assert.Contains("Suggested Next Moves", text);
+        Assert.Contains("Dry-run only", text);
+    }
+
+    [Fact]
+    public async Task Dream_WithOpenLoops_ShouldSurfaceActionableSuggestions()
+    {
+        var todoMarker = $"TODO: dream-marker-{Guid.NewGuid():N}";
+        var questionMarker = $"How to resolve dream-marker-{Guid.NewGuid():N}?";
+
+        await CallToolAsync("myclaw_note", new { text = todoMarker });
+        await CallToolAsync("myclaw_note", new { text = questionMarker });
+
+        var response = await CallToolAsync("myclaw_dream", new { });
+        var text = GetToolResultText(response);
+
+        Assert.Contains("Open Loops", text);
+        Assert.Contains(todoMarker, text);
+        Assert.Contains(questionMarker, text);
+        Assert.Contains("Suggested Next Moves", text);
     }
 
     #endregion

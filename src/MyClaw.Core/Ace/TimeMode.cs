@@ -97,7 +97,15 @@ public static class TimeModeManager
     /// </summary>
     public static TimeMode GetCurrentMode()
     {
-        var hour = DateTime.Now.Hour;
+        return GetCurrentMode(DateTime.Now);
+    }
+
+    /// <summary>
+    /// 根据指定时间获取时间模式
+    /// </summary>
+    public static TimeMode GetCurrentMode(DateTime now)
+    {
+        var hour = now.Hour;
 
         return hour switch
         {

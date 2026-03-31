@@ -216,8 +216,9 @@ public class RibosomeLoaderTests : IDisposable
         Assert.NotNull(instinct.InputSchema);
         Assert.Equal("object", instinct.InputSchema.Type);
         Assert.NotNull(instinct.InputSchema.Properties);
+        Assert.NotNull(instinct.InputSchema.Required);
         Assert.Equal(2, instinct.InputSchema.Properties.Count);
-        Assert.Contains("param1", instinct.InputSchema.Required);
+        Assert.Contains("param1", instinct.InputSchema.Required!);
     }
 
     [Fact]

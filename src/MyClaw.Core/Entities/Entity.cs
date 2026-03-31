@@ -52,4 +52,14 @@ public class Entity
     /// 提及次数
     /// </summary>
     public int MentionCount { get; set; } = 1;
+
+    /// <summary>
+    /// 活力值，用于决定实体是否应自然保留
+    /// </summary>
+    public int Vitality { get; set; } = 100;
+
+    /// <summary>
+    /// 活力上次更新时间
+    /// </summary>
+    public string VitalityUpdatedAt { get; set; } = string.Empty;
 }

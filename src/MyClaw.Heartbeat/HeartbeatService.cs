@@ -19,11 +19,16 @@ public class HeartbeatService
         set => _runner.OnHeartbeat = value;
     }
 
-    public HeartbeatService(string workspace, TimeSpan? interval = null)
+    /// <summary>
+    /// 每次心跳前构建附加上下文，可带有副作用（如吸收孢子、无聊扫描）。
+    /// </summary>
+    public Func<Task<string?>>? BuildSupplementalContext { get; set; }
+
+    public HeartbeatService(string workspace, TimeSpan? interval = null, HeartbeatTaskRunner? runner = null)
     {
         _workspace = workspace;
         _interval = interval ?? TimeSpan.FromMinutes(30);
-        _runner = new HeartbeatTaskRunner();
+        _runner = runner ?? new HeartbeatTaskRunner();
     }
 
     /// <summary>
@@ -42,7 +47,7 @@ public class HeartbeatService
         {
             while (await timer.WaitForNextTickAsync(token))
             {
-                await TickAsync();
+                await RunOnceAsync();
             }
         }
         catch (OperationCanceledException)
@@ -62,7 +67,7 @@ public class HeartbeatService
     /// <summary>
     /// 执行一次心跳
     /// </summary>
-    private async Task TickAsync()
+    public async Task RunOnceAsync()
     {
         var hbPath = Path.Combine(_workspace, "HEARTBEAT.md");
         
@@ -75,15 +80,32 @@ public class HeartbeatService
         {
             var content = await File.ReadAllTextAsync(hbPath);
             content = content.Trim();
+            var supplementalContext = string.Empty;
+            var supplementalContextBuilder = BuildSupplementalContext;
+            if (supplementalContextBuilder != null)
+            {
+                supplementalContext = (await supplementalContextBuilder.Invoke() ?? string.Empty).Trim();
+            }
+            var hasBaseWork = !string.IsNullOrEmpty(content) &&
+                !(content.StartsWith("# HEARTBEAT.md") && !content.Contains("- "));
+            var hasSupplementalWork = !string.IsNullOrWhiteSpace(supplementalContext);
 
-            if (string.IsNullOrEmpty(content) || content.StartsWith("# HEARTBEAT.md") && !content.Contains("- "))
+            if (!hasBaseWork && !hasSupplementalWork)
             {
                 return;
             }
 
-            Console.WriteLine($"[heartbeat] 触发心跳，提示词 ({content.Length} 字符)");
+            var effectiveContent = hasBaseWork ? content : string.Empty;
+            if (hasSupplementalWork)
+            {
+                effectiveContent = string.IsNullOrWhiteSpace(effectiveContent)
+                    ? supplementalContext
+                    : $"{effectiveContent}\n\n{supplementalContext}";
+            }
 
-            var result = await _runner.RunAsync(content);
+            Console.WriteLine($"[heartbeat] 触发心跳，提示词 ({effectiveContent.Length} 字符)");
+
+            var result = await _runner.RunAsync(effectiveContent);
 
             if (string.IsNullOrEmpty(result))
             {

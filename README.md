@@ -1,12 +1,14 @@
 # MyClaw.NET
 
 [![Status](https://img.shields.io/badge/Status-Stable-green)](./实施总结报告.md)
-[![Completion](https://img.shields.io/badge/Completion-100%25-success)](./TODO-改进清单-v2.md)
+[![Roadmap](https://img.shields.io/badge/Roadmap-P0%2FP1%20active-yellow)](./TODO.md)
 [![Tests](https://img.shields.io/badge/Tests-508%2B%20passing-brightgreen)]()
 
 > *我想我能安全地说，没人真正理解量子力学——但我们可以让它变得有用。同样，我想说，没人真正理解"意识"——但我们可以让一个 AI 记住你是谁。*
 
-> 📊 **项目状态**: 核心功能已完成，三层免疫系统、器官退化、无聊引擎、菌丝共生网络已全部实现。查看 [实施总结报告](./实施总结报告.md) 和 [改进清单](./TODO-改进清单-v2.md) 了解详情。
+> 📊 **项目状态**: 核心主路径已打通，当前重点转向文档治理、关键集成测试和终局进化工具补完。查看 [实施总结报告](./实施总结报告.md)、[改进方案和计划](./改进方案和计划.md) 和 [TODO](./TODO.md) 了解详情。
+
+> 🧭 **当前架构入口**: 如果你想先看系统现在是怎么跑起来的，而不是翻历史计划文档，直接读 [docs/主路径与模块编排.md](./docs/主路径与模块编排.md)。
 
 ---
 
@@ -380,7 +382,7 @@ dotnet test
 - [x] **技能缓存** - 5s TTL 避免重复扫描 ✅
 - [x] **向量持久化** - 自动保存 + GZip 压缩 ✅
 
-所有高/中优先级任务已完成！查看 [改进清单](./TODO-改进清单.md) 了解详情。
+核心主路径已经打通；当前仍在推进文档治理、关键集成测试以及 `myclaw_mutate` / `myclaw_reproduce` 等补完项。查看 [TODO.md](./TODO.md) 和 [改进方案和计划.md](./改进方案和计划.md) 了解详情。
 
 ---
 

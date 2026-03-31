@@ -76,6 +76,7 @@ public class ContentHash
 public class ContextCompiler
 {
     private const int CharsPerToken = 4;
+    private const int MinimumSkeletonChars = 80;
     private readonly int _tokenBudget;
     private readonly AffectManager? _affectManager;
 
@@ -117,12 +118,11 @@ public class ContextCompiler
             else
             {
                 var remaining = maxChars - totalChars;
-                if (remaining > 200)
+                var skeleton = CreateSkeleton(section, remaining);
+                if (!string.IsNullOrWhiteSpace(skeleton))
                 {
-                    var truncated = section.Content.Substring(0, remaining - 50) +
-                        $"\n\n... [{section.Name}: 已截断，省略 {sectionChars - remaining} 字符]\n";
-                    output.Append(truncated);
-                    totalChars += truncated.Length;
+                    output.Append(skeleton);
+                    totalChars += skeleton.Length;
                     truncatedSections.Add(section.Name);
                 }
                 else
@@ -182,5 +182,197 @@ public class ContextCompiler
         }
 
         return (changed, unchanged, newSections);
+    }
+
+    private static string? CreateSkeleton(ContextSection section, int availableChars)
+    {
+        if (availableChars < MinimumSkeletonChars)
+        {
+            return null;
+        }
+
+        var normalized = NormalizeLineEndings(section.Content).TrimEnd();
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return null;
+        }
+
+        var (frontmatter, body) = SplitFrontmatter(normalized);
+        var headings = ExtractHeadingLines(body);
+        var leadLines = headings.Count == 0 ? ExtractLeadLines(body, 4) : new List<string>();
+        var tailLines = ExtractTailLines(body, 6);
+
+        var frontmatterVariants = new[]
+        {
+            frontmatter,
+            TrimBlockLines(frontmatter, 6, "... [frontmatter skeletonized]"),
+            string.Empty
+        };
+
+        var outlineVariants = new[]
+        {
+            headings,
+            TakeFirst(headings, 4),
+            TakeFirst(headings, 2),
+            TakeFirst(headings, 1),
+            leadLines,
+            TakeFirst(leadLines, 2),
+            new List<string>()
+        };
+
+        var tailVariants = new[]
+        {
+            tailLines,
+            TakeLast(tailLines, 4),
+            TakeLast(tailLines, 2),
+            new List<string>()
+        };
+
+        foreach (var frontmatterCandidate in frontmatterVariants)
+        {
+            foreach (var outlineCandidate in outlineVariants)
+            {
+                foreach (var tailCandidate in tailVariants)
+                {
+                    var candidate = BuildSkeleton(section.Name, normalized.Length, frontmatterCandidate, outlineCandidate, tailCandidate);
+                    if (!string.IsNullOrWhiteSpace(candidate) && candidate.Length <= availableChars)
+                    {
+                        return candidate;
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static string BuildSkeleton(string sectionName, int originalLength, string frontmatter, List<string> outlineLines, List<string> tailLines)
+    {
+        var parts = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(frontmatter))
+        {
+            parts.Add(frontmatter.TrimEnd());
+        }
+
+        if (outlineLines.Count > 0)
+        {
+            parts.Add(string.Join("\n", outlineLines));
+        }
+
+        var uniqueTail = tailLines
+            .Where(line => !outlineLines.Contains(line))
+            .ToList();
+
+        var previewLength = parts.Sum(part => part.Length) + uniqueTail.Sum(line => line.Length) + uniqueTail.Count;
+        var omittedChars = Math.Max(0, originalLength - previewLength);
+        parts.Add($"... [{sectionName}: 已骨架化，保留 frontmatter/标题/尾部上下文，省略约 {omittedChars} 字符]");
+
+        if (uniqueTail.Count > 0)
+        {
+            parts.Add(string.Join("\n", uniqueTail));
+        }
+
+        return string.Join("\n\n", parts.Where(part => !string.IsNullOrWhiteSpace(part))).TrimEnd() + "\n\n";
+    }
+
+    private static (string Frontmatter, string Body) SplitFrontmatter(string content)
+    {
+        if (!content.StartsWith("---\n", StringComparison.Ordinal))
+        {
+            return (string.Empty, content);
+        }
+
+        var lines = content.Split('\n');
+        for (var index = 1; index < lines.Length; index++)
+        {
+            if (lines[index].Trim() == "---")
+            {
+                var frontmatter = string.Join("\n", lines[..(index + 1)]).TrimEnd();
+                var body = string.Join("\n", lines[(index + 1)..]).TrimStart('\n');
+                return (frontmatter, body);
+            }
+        }
+
+        return (string.Empty, content);
+    }
+
+    private static List<string> ExtractHeadingLines(string content)
+    {
+        return content
+            .Split('\n')
+            .Select(line => line.Trim())
+            .Where(line => line.StartsWith('#'))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+    }
+
+    private static List<string> ExtractLeadLines(string content, int maxLines)
+    {
+        return content
+            .Split('\n')
+            .Select(line => line.TrimEnd())
+            .Where(line => !string.IsNullOrWhiteSpace(line))
+            .Take(maxLines)
+            .ToList();
+    }
+
+    private static List<string> ExtractTailLines(string content, int maxLines)
+    {
+        var lines = content
+            .Split('\n')
+            .Select(line => line.TrimEnd())
+            .Where(line => !string.IsNullOrWhiteSpace(line))
+            .ToList();
+
+        if (lines.Count <= maxLines)
+        {
+            return lines;
+        }
+
+        return lines[^maxLines..];
+    }
+
+    private static string TrimBlockLines(string block, int maxLines, string suffix)
+    {
+        if (string.IsNullOrWhiteSpace(block))
+        {
+            return string.Empty;
+        }
+
+        var lines = block.Split('\n');
+        if (lines.Length <= maxLines)
+        {
+            return block.TrimEnd();
+        }
+
+        return string.Join("\n", lines[..maxLines]) + $"\n{suffix}";
+    }
+
+    private static List<string> TakeFirst(List<string> lines, int count)
+    {
+        if (lines.Count <= count)
+        {
+            return lines;
+        }
+
+        return lines.Take(count).ToList();
+    }
+
+    private static List<string> TakeLast(List<string> lines, int count)
+    {
+        if (lines.Count <= count)
+        {
+            return lines;
+        }
+
+        return lines[^count..];
+    }
+
+    private static string NormalizeLineEndings(string content)
+    {
+        return content
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace("\r", "\n", StringComparison.Ordinal);
     }
 }

@@ -106,6 +106,8 @@ public static class SkillLoader
             Name = metadata.Name.Trim(),
             Description = metadata.Description.Trim(),
             Keywords = SanitizeKeywords(metadata.Keywords),
+            Hooks = ParseHooks(metadata),
+            FilePatterns = SanitizeFilePatterns(metadata.FilePatterns),
             Content = body,
             SourcePath = sourcePath,
             Directory = Path.GetDirectoryName(sourcePath) ?? string.Empty
@@ -129,7 +131,7 @@ public static class SkillLoader
             // 列表项
             if (trimmed.StartsWith("- ") && currentKey != null)
             {
-                var item = trimmed[2..].Trim();
+                var item = TrimQuotes(trimmed[2..].Trim());
                 if (currentList == null)
                 {
                     currentList = new List<string>();
@@ -141,10 +143,7 @@ public static class SkillLoader
             // 保存之前的列表
             if (currentList != null && currentKey != null)
             {
-                if (currentKey == "keywords")
-                {
-                    metadata.Keywords = currentList;
-                }
+                AssignList(metadata, currentKey, currentList);
                 currentList = null;
                 currentKey = null;
             }
@@ -154,14 +153,7 @@ public static class SkillLoader
             if (colonIndex > 0)
             {
                 var key = trimmed[..colonIndex].Trim().ToLowerInvariant();
-                var value = trimmed[(colonIndex + 1)..].Trim();
-
-                // 移除引号
-                if ((value.StartsWith('"') && value.EndsWith('"')) ||
-                    (value.StartsWith("'") && value.EndsWith("'")))
-                {
-                    value = value[1..^1];
-                }
+                var value = TrimQuotes(trimmed[(colonIndex + 1)..].Trim());
 
                 switch (key)
                 {
@@ -172,31 +164,135 @@ public static class SkillLoader
                         metadata.Description = value;
                         break;
                     case "keywords":
+                    case "hooks":
+                    case "filepatterns":
+                    case "file_patterns":
                         currentKey = key;
                         if (!string.IsNullOrEmpty(value))
                         {
                             // 内联列表: [a, b, c]
                             if (value.StartsWith('[') && value.EndsWith(']'))
                             {
-                                metadata.Keywords = value[1..^1]
-                                    .Split(',')
-                                    .Select(s => s.Trim().Trim('"', '\''))
-                                    .Where(s => !string.IsNullOrEmpty(s))
-                                    .ToList();
+                                AssignList(metadata, key, ParseInlineList(value));
+                                currentKey = null;
                             }
                         }
+                        break;
+                    case "onboot":
+                        metadata.OnBoot = ParseBoolean(value);
+                        break;
+                    case "onheartbeat":
+                        metadata.OnHeartbeat = ParseBoolean(value);
+                        break;
+                    case "onmemorywrite":
+                        metadata.OnMemoryWrite = ParseBoolean(value);
+                        break;
+                    case "onfilechanged":
+                        metadata.OnFileChanged = ParseBoolean(value);
                         break;
                 }
             }
         }
 
         // 处理最后一行是列表的情况
-        if (currentList != null && currentKey == "keywords")
+        if (currentList != null && currentKey != null)
         {
-            metadata.Keywords = currentList;
+            AssignList(metadata, currentKey, currentList);
         }
 
         return metadata;
+    }
+
+    private static void AssignList(SkillMetadata metadata, string key, List<string> values)
+    {
+        switch (key)
+        {
+            case "keywords":
+                metadata.Keywords = values;
+                break;
+            case "hooks":
+                metadata.Hooks = values;
+                break;
+            case "filepatterns":
+            case "file_patterns":
+                metadata.FilePatterns = values;
+                break;
+        }
+    }
+
+    private static List<string> ParseInlineList(string value)
+    {
+        return value[1..^1]
+            .Split(',')
+            .Select(item => TrimQuotes(item.Trim()))
+            .Where(item => !string.IsNullOrEmpty(item))
+            .ToList();
+    }
+
+    private static string TrimQuotes(string value)
+    {
+        if ((value.StartsWith('"') && value.EndsWith('"')) ||
+            (value.StartsWith("'") && value.EndsWith("'")))
+        {
+            return value[1..^1];
+        }
+
+        return value;
+    }
+
+    private static bool ParseBoolean(string value)
+    {
+        return value.Equals("true", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("yes", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("1", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static List<SkillHookType> ParseHooks(SkillMetadata metadata)
+    {
+        var hooks = new HashSet<SkillHookType>();
+
+        foreach (var hook in metadata.Hooks)
+        {
+            if (TryParseHook(hook, out var parsed))
+            {
+                hooks.Add(parsed);
+            }
+        }
+
+        if (metadata.OnBoot) hooks.Add(SkillHookType.Boot);
+        if (metadata.OnHeartbeat) hooks.Add(SkillHookType.Heartbeat);
+        if (metadata.OnMemoryWrite) hooks.Add(SkillHookType.MemoryWrite);
+        if (metadata.OnFileChanged) hooks.Add(SkillHookType.FileChanged);
+
+        return hooks.OrderBy(hook => hook).ToList();
+    }
+
+    private static bool TryParseHook(string value, out SkillHookType hookType)
+    {
+        switch (value.Trim().ToLowerInvariant())
+        {
+            case "onboot":
+            case "boot":
+                hookType = SkillHookType.Boot;
+                return true;
+            case "onheartbeat":
+            case "heartbeat":
+                hookType = SkillHookType.Heartbeat;
+                return true;
+            case "onmemorywrite":
+            case "memorywrite":
+            case "memory_write":
+                hookType = SkillHookType.MemoryWrite;
+                return true;
+            case "onfilechanged":
+            case "filechanged":
+            case "file_changed":
+                hookType = SkillHookType.FileChanged;
+                return true;
+            default:
+                hookType = default;
+                return false;
+        }
     }
 
     /// <summary>
@@ -204,22 +300,32 @@ public static class SkillLoader
     /// </summary>
     private static List<string> SanitizeKeywords(List<string> keywords)
     {
+        return SanitizeStrings(keywords, keyword => keyword.ToLowerInvariant());
+    }
+
+    private static List<string> SanitizeFilePatterns(List<string> patterns)
+    {
+        return SanitizeStrings(patterns, pattern => pattern.Replace('\\', '/'));
+    }
+
+    private static List<string> SanitizeStrings(List<string> values, Func<string, string> normalize)
+    {
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var result = new List<string>();
 
-        foreach (var keyword in keywords)
+        foreach (var value in values)
         {
-            var normalized = keyword.ToLowerInvariant().Trim();
-            if (string.IsNullOrEmpty(normalized))
+            var normalized = normalize(value).Trim();
+            if (string.IsNullOrEmpty(normalized) || seen.Contains(normalized))
+            {
                 continue;
-            if (seen.Contains(normalized))
-                continue;
+            }
 
             seen.Add(normalized);
             result.Add(normalized);
         }
 
-        result.Sort();
+        result.Sort(StringComparer.OrdinalIgnoreCase);
         return result;
     }
 }

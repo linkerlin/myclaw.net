@@ -82,6 +82,11 @@ public class SchemaProperty
     /// 默认值
     /// </summary>
     public object? Default { get; set; }
+
+    /// <summary>
+    /// 数组元素定义（用于 array 类型）
+    /// </summary>
+    public SchemaProperty? Items { get; set; }
 }
 
 /// <summary>

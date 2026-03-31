@@ -13,6 +13,7 @@ public class MyClawAgent
     private readonly EnhancedReActAgent _agent;
     private readonly MyClawConfiguration _config;
     private readonly MemoryStore _memoryStore;
+    private readonly AgentPromptContextBuilder _promptContextBuilder;
 
     public MyClawAgent(
         MyClawConfiguration config,
@@ -22,8 +23,17 @@ public class MyClawAgent
     {
         _config = config;
         _memoryStore = memoryStore;
+        _promptContextBuilder = new AgentPromptContextBuilder(config, memoryStore);
 
-        var systemPrompt = BuildSystemPrompt();
+        var systemPrompt = _promptContextBuilder.BuildSystemPrompt();
+        if (skillManager != null)
+        {
+            var hookContext = skillManager.BuildHookContext(SkillHookType.Boot);
+            if (!string.IsNullOrWhiteSpace(hookContext))
+            {
+                systemPrompt = $"{systemPrompt}\n\n{hookContext}";
+            }
+        }
 
         var builder = EnhancedReActAgent.Builder()
             .Name("MyClaw")
@@ -53,49 +63,5 @@ public class MyClawAgent
 
         var response = await _agent.Call(msg).FirstAsync();
         return response.GetTextContent() ?? "无响应";
-    }
-
-    private string BuildSystemPrompt()
-    {
-        var parts = new List<string>();
-
-        var workspace = _config.Agent.Workspace;
-
-        var agentsPath = Path.Combine(workspace, "AGENTS.md");
-        if (File.Exists(agentsPath))
-        {
-            parts.Add(File.ReadAllText(agentsPath));
-        }
-
-        var soulPath = Path.Combine(workspace, "SOUL.md");
-        if (File.Exists(soulPath))
-        {
-            parts.Add(File.ReadAllText(soulPath));
-        }
-
-        var heartbeatPath = Path.Combine(workspace, "HEARTBEAT.md");
-        if (File.Exists(heartbeatPath))
-        {
-            parts.Add("## 心跳任务\n" + File.ReadAllText(heartbeatPath));
-        }
-
-        var memoryContext = _memoryStore.GetMemoryContext();
-        if (!string.IsNullOrEmpty(memoryContext))
-        {
-            parts.Add("## 记忆上下文\n" + memoryContext);
-        }
-
-        parts.Add(@"
-你是 MyClaw，一个个人 AI 助手。
-
-你可以使用以下工具来完成任务：
-- Skills: 各种专业领域的技能助手
-- Calculator: 数学计算
-- GetTime: 获取当前时间
-
-请用中文或用户使用的语言回复。
-");
-
-        return string.Join("\n\n", parts);
     }
 }

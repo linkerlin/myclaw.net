@@ -203,6 +203,14 @@ public class RibosomeLoader
                     propJson["default"] = JsonValue.Create(prop.Default);
                 }
 
+                if (prop.Items != null)
+                {
+                    propJson["items"] = new JsonObject
+                    {
+                        ["type"] = prop.Items.Type
+                    };
+                }
+
                 properties[propName] = propJson;
             }
             jsonSchema["properties"] = properties;
@@ -266,6 +274,52 @@ public class RibosomeLoader
                             {
                                 Type = "string",
                                 Description = "新内容"
+                            }
+                        },
+                        Required = new List<string>()
+                    }
+                },
+                ["myclaw_mutate"] = new InstinctDefinition
+                {
+                    Handler = "MutateDNA",
+                    Description = "【本能：基因重写手术】只允许重写 SOUL.md 或 IDENTITY.md；写入前执行 TelomereGuard 校验，并在覆写前自动创建备份。",
+                    IsCore = true,
+                    InputSchema = new InstinctInputSchema
+                    {
+                        Type = "object",
+                        Properties = new Dictionary<string, SchemaProperty>
+                        {
+                            ["target"] = new SchemaProperty
+                            {
+                                Type = "string",
+                                Description = "目标 DNA 文件，仅允许 SOUL.md 或 IDENTITY.md",
+                                Enum = new List<string> { "SOUL.md", "IDENTITY.md" }
+                            },
+                            ["content"] = new SchemaProperty
+                            {
+                                Type = "string",
+                                Description = "完整的新文件内容"
+                            }
+                        },
+                        Required = new List<string> { "target", "content" }
+                    }
+                },
+                ["myclaw_reproduce"] = new InstinctDefinition
+                {
+                    Handler = "Reproduce",
+                    Description = "【本能：孢子繁衍】打包当前核心 DNA、entities 和 skills，生成 zip 形式的孢子快照。",
+                    IsCore = true,
+                    InputSchema = new InstinctInputSchema
+                    {
+                        Type = "object",
+                        Properties = new Dictionary<string, SchemaProperty>
+                        {
+                            ["format"] = new SchemaProperty
+                            {
+                                Type = "string",
+                                Description = "输出格式，当前仅支持 zip",
+                                Enum = new List<string> { "zip" },
+                                Default = "zip"
                             }
                         },
                         Required = new List<string>()
@@ -355,7 +409,7 @@ public class RibosomeLoader
                 ["myclaw_skill"] = new InstinctDefinition
                 {
                     Handler = "Skill",
-                    Description = "【技能创建器】创建、查看、删除可复用技能",
+                    Description = "【技能创建器】创建、查看、删除可复用技能，并可通过 frontmatter 配置 hook",
                     IsCore = true,
                     InputSchema = new InstinctInputSchema
                     {
@@ -366,7 +420,7 @@ public class RibosomeLoader
                             {
                                 Type = "string",
                                 Description = "操作类型",
-                                Enum = new List<string> { "create", "list", "delete" }
+                                Enum = new List<string> { "create", "list", "delete", "harvest" }
                             },
                             ["name"] = new SchemaProperty
                             {
@@ -382,6 +436,40 @@ public class RibosomeLoader
                             {
                                 Type = "string",
                                 Description = "技能内容"
+                            },
+                            ["keywords"] = new SchemaProperty
+                            {
+                                Type = "array",
+                                Description = "可选关键词列表",
+                                Items = new SchemaProperty { Type = "string" }
+                            },
+                            ["hooks"] = new SchemaProperty
+                            {
+                                Type = "array",
+                                Description = "可选 hook 列表：onBoot, onHeartbeat, onMemoryWrite, onFileChanged",
+                                Items = new SchemaProperty { Type = "string" }
+                            },
+                            ["filePatterns"] = new SchemaProperty
+                            {
+                                Type = "array",
+                                Description = "onFileChanged 使用的可选文件匹配模式",
+                                Items = new SchemaProperty { Type = "string" }
+                            },
+                            ["apply"] = new SchemaProperty
+                            {
+                                Type = "boolean",
+                                Description = "harvest 时是否实际写入 skills 目录；默认 false 表示 dry-run"
+                            },
+                            ["overwrite"] = new SchemaProperty
+                            {
+                                Type = "boolean",
+                                Description = "harvest 时是否允许覆盖已有技能"
+                            },
+                            ["sources"] = new SchemaProperty
+                            {
+                                Type = "array",
+                                Description = "harvest 时要扫描的来源列表：copilot, cursor, claude, windsurf",
+                                Items = new SchemaProperty { Type = "string" }
                             }
                         },
                         Required = new List<string> { "action" }

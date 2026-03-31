@@ -6,9 +6,18 @@ namespace MyClaw.Heartbeat;
 public class HeartbeatTaskRunner
 {
     private const string NoActionMarker = "HEARTBEAT_OK";
+    private readonly Func<CancellationToken, Task<List<AiCliInfo>>> _detectAvailableClisAsync;
+    private readonly Func<HeartbeatTask, AiCliInfo, CancellationToken, Task<ExecutionResult>> _executeAutonomouslyAsync;
 
-    private readonly AiCliDetector _detector = new();
-    private readonly AutonomousExecutor _executor = new();
+    public HeartbeatTaskRunner(
+        Func<CancellationToken, Task<List<AiCliInfo>>>? detectAvailableClisAsync = null,
+        Func<HeartbeatTask, AiCliInfo, CancellationToken, Task<ExecutionResult>>? executeAutonomouslyAsync = null)
+    {
+        var detector = new AiCliDetector();
+        var executor = new AutonomousExecutor();
+        _detectAvailableClisAsync = detectAvailableClisAsync ?? detector.DetectAvailableClisAsync;
+        _executeAutonomouslyAsync = executeAutonomouslyAsync ?? executor.ExecuteAsync;
+    }
 
     /// <summary>
     /// 当无可用 AI CLI 或自主执行失败时，使用此回调（如 Gateway 的 Agent）
@@ -28,12 +37,12 @@ public class HeartbeatTaskRunner
             return "";
 
         // 1. 尝试检测可用 AI CLI
-        var clis = await _detector.DetectAvailableClisAsync(ct);
+        var clis = await _detectAvailableClisAsync(ct);
         if (clis.Count > 0)
         {
             // 2. 优先使用第一个可用的 CLI 自主执行
             var cli = clis[0];
-            var result = await _executor.ExecuteAsync(task, cli, ct);
+            var result = await _executeAutonomouslyAsync(task, cli, ct);
             if (result.Success)
             {
                 if (result.NoActionNeeded)

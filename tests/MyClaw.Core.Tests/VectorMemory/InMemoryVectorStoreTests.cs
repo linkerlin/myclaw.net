@@ -358,7 +358,7 @@ public class InMemoryVectorStoreTests
     }
 
     [Fact]
-    public void SearchWithVector_ShouldReturnOrderedResults()
+    public async Task SearchWithVector_ShouldReturnOrderedResults()
     {
         var store = new InMemoryVectorStore(128);
 
@@ -374,19 +374,19 @@ public class InMemoryVectorStoreTests
             lowSimilarity[i] = 0.1f;
         }
 
-        store.UpsertAsync(new VectorMemoryEntry
+        await store.UpsertAsync(new VectorMemoryEntry
         {
             Id = "high",
             Content = "High similarity",
             Embedding = highSimilarity
-        }).Wait();
+        });
 
-        store.UpsertAsync(new VectorMemoryEntry
+        await store.UpsertAsync(new VectorMemoryEntry
         {
             Id = "low",
             Content = "Low similarity",
             Embedding = lowSimilarity
-        }).Wait();
+        });
 
         var results = store.SearchWithVector(queryVector, topK: 5);
 

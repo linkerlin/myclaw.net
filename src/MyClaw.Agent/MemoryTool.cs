@@ -1,15 +1,18 @@
 using AgentScope.Core.Tool;
 using MyClaw.Memory;
+using MyClaw.Skills;
 
 namespace MyClaw.Agent;
 
 public class MemoryTool : ToolBase
 {
     private readonly MemoryStore _memoryStore;
+    private readonly SkillManager? _skillManager;
 
-    public MemoryTool(MemoryStore memoryStore) : base("memory", "记录重要信息到长期记忆，如用户姓名、偏好、约定等")
+    public MemoryTool(MemoryStore memoryStore, SkillManager? skillManager = null) : base("memory", "记录重要信息到长期记忆，如用户姓名、偏好、约定等")
     {
         _memoryStore = memoryStore;
+        _skillManager = skillManager;
     }
 
     public override Dictionary<string, object> GetSchema()
@@ -51,6 +54,13 @@ public class MemoryTool : ToolBase
         _memoryStore.AppendToday(entry);
         Console.WriteLine($"[Memory] 已记录: {content}");
 
-        return Task.FromResult(ToolResult.Ok($"已记录到记忆: {content}"));
+        var result = $"已记录到记忆: {content}";
+        var hookContext = _skillManager?.BuildHookContext(SkillHookType.MemoryWrite);
+        if (!string.IsNullOrWhiteSpace(hookContext))
+        {
+            result = $"{result}\n\n{hookContext}";
+        }
+
+        return Task.FromResult(ToolResult.Ok(result));
     }
 }

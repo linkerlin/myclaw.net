@@ -95,6 +95,7 @@ public class DailyBriefingServiceTests : IDisposable
 
         Assert.Contains("新增记忆", briefing);
         Assert.Contains("React", briefing);
+        Assert.Contains("vitality 100", briefing);
     }
 
     [Fact]

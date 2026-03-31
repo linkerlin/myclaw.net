@@ -154,6 +154,60 @@ public class SkillManager
     }
 
     /// <summary>
+    /// 根据 Hook 查找匹配的 Skills
+    /// </summary>
+    public List<Skill> FindByHook(SkillHookType hookType, string? targetPath = null)
+    {
+        EnsureSkillsLoaded();
+
+        lock (_lock)
+        {
+            return _skills.Values
+                .Where(skill => skill.SupportsHook(hookType, targetPath))
+                .OrderBy(skill => skill.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+    }
+
+    /// <summary>
+    /// 构建 Hook 上下文，供 prompt 或工具结果直接注入
+    /// </summary>
+    public string BuildHookContext(SkillHookType hookType, string? targetPath = null)
+    {
+        var matches = FindByHook(hookType, targetPath);
+        if (matches.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var lines = new List<string>
+        {
+            $"## SKILL HOOKS ({hookType.ToFrontmatterValue()})"
+        };
+
+        if (!string.IsNullOrWhiteSpace(targetPath))
+        {
+            lines.Add($"Target: {targetPath.Replace('\\', '/')}");
+        }
+
+        lines.Add(string.Empty);
+
+        foreach (var skill in matches)
+        {
+            lines.Add($"### {skill.Name}");
+            if (!string.IsNullOrWhiteSpace(skill.Description))
+            {
+                lines.Add(skill.Description);
+            }
+
+            lines.Add(skill.GetSystemPrompt().Trim());
+            lines.Add(string.Empty);
+        }
+
+        return string.Join("\n", lines).TrimEnd();
+    }
+
+    /// <summary>
     /// 检查 Skill 是否存在（带缓存）
     /// </summary>
     public bool HasSkill(string name)
